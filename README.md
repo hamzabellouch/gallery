@@ -22,16 +22,17 @@ Gallery UI & Features :
 
 <div align="center">
 <div>
-<img src="https://raw.githubusercontent.com/hamzabellouch/gallery/main/Images/Home.jpg" width="30%" />
-<img src="https://raw.githubusercontent.com/hamzabellouch/gallery/main/Images/Albums.jpg" width="30%" />
-<img src="https://raw.githubusercontent.com/hamzabellouch/gallery/main/Images/MediaViewer.jpg" width="30%" />
-<img src="https://raw.githubusercontent.com/hamzabellouch/gallery/main/Images/VideoPlayer.jpg" width="30%" />
-<img src="https://raw.githubusercontent.com/hamzabellouch/gallery/main/Images/ExifInfo.jpg" width="30%" />
-<img src="https://raw.githubusercontent.com/hamzabellouch/gallery/main/Images/FastScrollbar.jpg" width="30%" />
-<img src="https://raw.githubusercontent.com/hamzabellouch/gallery/main/Images/Look%20%26%20feel.jpg" width="30%" />
-<img src="https://raw.githubusercontent.com/hamzabellouch/gallery/main/Images/Language.jpg" width="30%" />
-<img src="https://raw.githubusercontent.com/hamzabellouch/gallery/main/Images/Auto%20update.jpg" width="30%" />
-<img src="https://raw.githubusercontent.com/hamzabellouch/gallery/main/Images/About.jpg" width="30%" />
+<img src="https://github.com/hamzabellouch/gallery/blob/main/Images/1.jpg" width="30%" />
+<img src="https://github.com/hamzabellouch/gallery/blob/main/Images/2.jpg" width="30%" />
+<img src="https://github.com/hamzabellouch/gallery/blob/main/Images/3.jpg" width="30%" />
+<img src="https://github.com/hamzabellouch/gallery/blob/main/Images/4.jpg" width="30%" />
+<img src="https://github.com/hamzabellouch/gallery/blob/main/Images/5.jpg" width="30%" />
+<img src="https://github.com/hamzabellouch/gallery/blob/main/Images/6.jpg" width="30%" />
+<img src="https://github.com/hamzabellouch/gallery/blob/main/Images/7.jpg" width="30%" />
+<img src="https://github.com/hamzabellouch/gallery/blob/main/Images/8.jpg" width="30%" />
+<img src="https://github.com/hamzabellouch/gallery/blob/main/Images/9.jpg" width="30%" />
+<img src="https://github.com/hamzabellouch/gallery/blob/main/Images/10.jpg" width="30%" />
+<img src="https://github.com/hamzabellouch/gallery/blob/main/Images/11.jpg" width="30%" />
 </div>
 </div>
 
