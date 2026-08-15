@@ -1,0 +1,57 @@
+# ============================================================
+# Android / Kotlin .gitignore
+# ============================================================
+
+# --- Local SDK & environment (machine-specific) ---
+local.properties
+
+# --- Build outputs ---
+build/
+**/build/
+out/
+
+# --- Gradle caches & wrappers (except wrapper scripts) ---
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# --- IDE: Android Studio / IntelliJ ---
+.idea/
+*.iws
+*.iml
+*.ipr
+captures/
+.navigation/
+*.hprof
+
+# --- Kotlin incremental compilation ---
+.kotlin/
+
+# --- Signing keystores & credentials ---
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+signing.properties
+release.properties
+
+# --- Release artifacts (APKs, AABs) ---
+*.apk
+*.aab
+app/release/
+app/debug/
+
+# --- Baseline profiles (generated) ---
+app/release/baselineProfiles/
+app/src/release/
+**/*.dm
+**/*.dm.gz
+
+# --- OS generated files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Logs ---
+*.log
