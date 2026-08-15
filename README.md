@@ -4,9 +4,8 @@
 An open-source, modern Android gallery application built with Jetpack Compose, Material You (Material 3), and AndroidX Media3 ExoPlayer.
 </p>
 
-<div align="center">
-  <img src="https://raw.githubusercontent.com/hamzabellouch/gallery/main/Images/Gallery.png" alt="Gallery" width="800"/>
-</div>
+<img width="2724" height="1536" alt="Gallery" src="https://github.com/user-attachments/assets/efdf457b-6bac-4868-acf6-8aaca059d8ea" />
+
 
 ## Overview
 
