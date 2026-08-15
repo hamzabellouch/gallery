@@ -54,6 +54,10 @@ android {
     }
 }
 
+base {
+    archivesName.set("Gallery-v${android.defaultConfig.versionName}")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
