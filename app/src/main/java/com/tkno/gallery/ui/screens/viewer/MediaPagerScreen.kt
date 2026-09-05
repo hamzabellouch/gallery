@@ -5,7 +5,11 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.os.Build
+import android.provider.MediaStore
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -70,6 +74,8 @@ fun MediaPagerScreen(
     initialIndex: Int,
     onBackClick: () -> Unit,
     onToggleFavorite: ((MediaItem) -> Unit)? = null,
+    onDeleteMediaItem: ((MediaItem) -> Unit)? = null,
+    onEditClick: ((MediaItem) -> Unit)? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
@@ -82,6 +88,25 @@ fun MediaPagerScreen(
     val pagerState = rememberPagerState(initialPage = startIndex, pageCount = { mediaItems.size })
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() as? ComponentActivity }
+
+    var pendingDeleteItem by remember { mutableStateOf<MediaItem?>(null) }
+
+    val deleteLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            pendingDeleteItem?.let { item ->
+                onDeleteMediaItem?.invoke(item)
+            }
+        }
+        pendingDeleteItem = null
+    }
+
+    LaunchedEffect(mediaItems.size) {
+        if (mediaItems.isNotEmpty() && pagerState.currentPage >= mediaItems.size) {
+            pagerState.scrollToPage(mediaItems.size - 1)
+        }
+    }
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -118,9 +143,43 @@ fun MediaPagerScreen(
     var isZoomedIn by remember { mutableStateOf(false) }
     var resetZoomTrigger by remember { mutableIntStateOf(0) }
 
+    val currentItem = mediaItems.getOrNull(pagerState.currentPage)
+        ?: mediaItems.getOrNull(startIndex)
+        ?: mediaItems.lastOrNull()
 
+    if (currentItem == null) {
+        LaunchedEffect(Unit) { onBackClick() }
+        return
+    }
 
-    val currentItem = mediaItems.getOrNull(pagerState.currentPage) ?: mediaItems[startIndex]
+    fun deleteCurrentItem() {
+        val itemToDelete = currentItem
+        pendingDeleteItem = itemToDelete
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val intentSender = MediaStore.createTrashRequest(
+                    context.contentResolver,
+                    listOf(itemToDelete.uri),
+                    true
+                ).intentSender
+                deleteLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+            } catch (e: Exception) {
+                e.printStackTrace()
+                pendingDeleteItem = null
+            }
+        } else {
+            try {
+                val rows = context.contentResolver.delete(itemToDelete.uri, null, null)
+                if (rows > 0) {
+                    onDeleteMediaItem?.invoke(itemToDelete)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                pendingDeleteItem = null
+            }
+        }
+    }
 
     LaunchedEffect(currentItem.uri) {
         if (!currentItem.isVideo) {
@@ -381,7 +440,7 @@ fun MediaPagerScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                         modifier = Modifier
-                            .clickable { }
+                            .clickable { onEditClick?.invoke(currentItem) }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Icon(
@@ -403,7 +462,7 @@ fun MediaPagerScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                         modifier = Modifier
-                            .clickable { }
+                            .clickable { deleteCurrentItem() }
                             .padding(horizontal = 16.dp, vertical = 6.dp)
                     ) {
                         Icon(

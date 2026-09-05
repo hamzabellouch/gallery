@@ -53,7 +53,8 @@ class MainActivity : ComponentActivity() {
                             navController = navController,
                             mediaItems = mediaItems,
                             albums = albums,
-                            favoritesManager = favoritesManager
+                            favoritesManager = favoritesManager,
+                            repository = repository
                         )
                     }
                 }

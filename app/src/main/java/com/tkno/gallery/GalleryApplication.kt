@@ -10,6 +10,7 @@ import coil3.gif.GifDecoder
 import coil3.request.crossfade
 import coil3.svg.SvgDecoder
 import coil3.video.VideoFrameDecoder
+import com.tkno.gallery.util.MediaStoreThumbnailFetcher
 import com.tkno.gallery.util.MemoryManager
 
 class GalleryApplication : App(), SingletonImageLoader.Factory {
@@ -20,7 +21,10 @@ class GalleryApplication : App(), SingletonImageLoader.Factory {
                 MemoryManager.configureCoilMemoryCache(context)
             }
             .components {
-                // Standalone decoders for Video Thumbnails, Animated GIFs, SVGs, and High-Res Images
+                // 1. Ultra-fast hardware thumbnail fetcher for MediaStore images & videos (1-2ms)
+                add(MediaStoreThumbnailFetcher.Factory(context))
+
+                // 2. Standalone decoders for Video Thumbnails fallback, Animated GIFs, SVGs
                 add(VideoFrameDecoder.Factory())
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     add(AnimatedImageDecoder.Factory())
@@ -29,7 +33,7 @@ class GalleryApplication : App(), SingletonImageLoader.Factory {
                 }
                 add(SvgDecoder.Factory())
             }
-            .crossfade(true)
+            .crossfade(false)
             .build()
     }
 

@@ -40,32 +40,47 @@ data class MediaItem(
         get() = if (width > 0 && height > 0) "${width}x${height}" else "Unknown"
 
     val isHighRes: Boolean
-        get() = (width * height) >= 12_000_000 // 12 Megapixels or higher
+        get() = (width.toLong() * height.toLong()) >= 12_000_000L // 12 Megapixels or higher
 
-    val resolutionBadge: ResolutionBadge
-        get() {
+    val resolutionBadge: ResolutionBadge by lazy(LazyThreadSafetyMode.NONE) {
+        computeResolutionBadge(width, height, name)
+    }
+
+    companion object {
+        fun computeResolutionBadge(width: Int, height: Int, name: String): ResolutionBadge {
             val maxDim = maxOf(width, height)
             val minDim = minOf(width, height)
 
-            fun hasTag(title: String, tag: String): Boolean {
-                val regex = Regex("(?i)(^|[^a-z0-9])${Regex.escape(tag)}($|[^a-z0-9])")
-                return regex.containsMatchIn(title)
+            if (maxDim >= 9600 || minDim >= 5400) return ResolutionBadge.RES_10K
+            if (maxDim >= 7680 || minDim >= 4320) return ResolutionBadge.RES_8K
+            if (maxDim >= 6720 || minDim >= 3780) return ResolutionBadge.RES_7K
+            if (maxDim >= 5760 || minDim >= 3240) return ResolutionBadge.RES_6K
+            if (maxDim >= 4800 || minDim >= 2700) return ResolutionBadge.RES_5K
+            if (minDim >= 2160 || maxDim >= 3500) return ResolutionBadge.RES_4K
+            if (maxDim >= 2880 || (maxDim >= 2560 && minDim >= 1600)) return ResolutionBadge.RES_3K
+            if (minDim >= 1400 || (maxDim >= 1440 && minDim >= 1080 && maxDim < 1920)) return ResolutionBadge.RES_2K
+            if (maxDim >= 1700 || minDim >= 950) return ResolutionBadge.RES_FHD
+            if (maxDim >= 1150 || minDim >= 650) return ResolutionBadge.RES_HD
+            if (maxDim >= 900 || minDim >= 500) return ResolutionBadge.RES_1K
+
+            // Fast non-regex check in filename
+            if (name.isNotEmpty()) {
+                val upper = name.uppercase()
+                if (upper.contains("10K")) return ResolutionBadge.RES_10K
+                if (upper.contains("8K")) return ResolutionBadge.RES_8K
+                if (upper.contains("7K")) return ResolutionBadge.RES_7K
+                if (upper.contains("6K")) return ResolutionBadge.RES_6K
+                if (upper.contains("5K")) return ResolutionBadge.RES_5K
+                if (upper.contains("4K") || upper.contains("UHD") || upper.contains("2160P")) return ResolutionBadge.RES_4K
+                if (upper.contains("3K")) return ResolutionBadge.RES_3K
+                if (upper.contains("2K") || upper.contains("QHD") || upper.contains("1440P")) return ResolutionBadge.RES_2K
+                if (upper.contains("1080P") || upper.contains("FHD") || upper.contains("1080")) return ResolutionBadge.RES_FHD
+                if (upper.contains("720P") || upper.contains("HD") || upper.contains("720")) return ResolutionBadge.RES_HD
+                if (upper.contains("1K")) return ResolutionBadge.RES_1K
             }
 
-            return when {
-                maxDim >= 9600 || minDim >= 5400 || hasTag(name, "10K") -> ResolutionBadge.RES_10K
-                maxDim >= 7680 || minDim >= 4320 || hasTag(name, "8K") -> ResolutionBadge.RES_8K
-                maxDim >= 6720 || minDim >= 3780 || hasTag(name, "7K") -> ResolutionBadge.RES_7K
-                maxDim >= 5760 || minDim >= 3240 || hasTag(name, "6K") -> ResolutionBadge.RES_6K
-                maxDim >= 4800 || minDim >= 2700 || hasTag(name, "5K") -> ResolutionBadge.RES_5K
-                minDim >= 2160 || maxDim >= 3500 || hasTag(name, "4K") || hasTag(name, "UHD") || hasTag(name, "2160p") -> ResolutionBadge.RES_4K
-                maxDim >= 2880 || (maxDim >= 2560 && minDim >= 1600) || hasTag(name, "3K") -> ResolutionBadge.RES_3K
-                minDim >= 1400 || (maxDim >= 1440 && minDim >= 1080 && maxDim < 1920) || hasTag(name, "2K") || hasTag(name, "QHD") || hasTag(name, "1440p") -> ResolutionBadge.RES_2K
-                maxDim >= 1700 || minDim >= 950  || hasTag(name, "1080p") || hasTag(name, "FHD") || hasTag(name, "1080") -> ResolutionBadge.RES_FHD
-                maxDim >= 1150 || minDim >= 650  || hasTag(name, "720p") || hasTag(name, "HD") || hasTag(name, "720")  -> ResolutionBadge.RES_HD
-                maxDim >= 900  || minDim >= 500  || hasTag(name, "1K")                                               -> ResolutionBadge.RES_1K
-                else -> ResolutionBadge.NONE
-            }
+            return ResolutionBadge.NONE
         }
+    }
 }
 

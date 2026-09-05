@@ -17,9 +17,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.tkno.gallery.data.model.Album
 import com.tkno.gallery.data.model.MediaItem
 import com.tkno.gallery.data.repository.FavoritesManager
+import com.tkno.gallery.data.repository.MediaStoreRepository
 import com.tkno.gallery.ui.page.settings.about.UpdatePage
+import com.tkno.gallery.ui.screens.editor.PhotoEditorScreen
+import com.tkno.gallery.ui.screens.editor.VideoEditorScreen
 import com.tkno.gallery.ui.screens.home.HomeScreen
 import com.tkno.gallery.ui.screens.menu.*
+import com.tkno.gallery.ui.screens.trash.TrashScreen
 import com.tkno.gallery.ui.screens.viewer.MediaPagerScreen
 import kotlinx.coroutines.launch
 
@@ -29,7 +33,8 @@ fun NavGraph(
     navController: NavHostController,
     mediaItems: List<MediaItem>,
     albums: List<Album>,
-    favoritesManager: FavoritesManager
+    favoritesManager: FavoritesManager,
+    repository: MediaStoreRepository
 ) {
     val favoriteUris by favoritesManager.favoriteUris.collectAsState()
 
@@ -40,6 +45,7 @@ fun NavGraph(
     var activeMediaList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var activeInitialIndex by remember { mutableIntStateOf(0) }
     var selectedAlbumItem by remember { mutableStateOf<Album?>(null) }
+    var editingMediaItem by remember { mutableStateOf<MediaItem?>(null) }
 
     val updatedActiveMediaList = remember(activeMediaList, favoriteUris) {
         activeMediaList.map { it.copy(isFavorite = it.uri.toString() in favoriteUris) }
@@ -56,7 +62,7 @@ fun NavGraph(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = currentRoute != "media_pager",
+        gesturesEnabled = currentRoute != "media_pager" && currentRoute != "photo_editor" && currentRoute != "video_editor",
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = MaterialTheme.colorScheme.background,
@@ -179,9 +185,80 @@ fun NavGraph(
                         onToggleFavorite = { mediaItem ->
                             favoritesManager.toggleFavorite(mediaItem.uri.toString())
                         },
+                        onDeleteMediaItem = { mediaItem ->
+                            val updatedList = activeMediaList.filter { it.id != mediaItem.id }
+                            activeMediaList = updatedList
+                            if (updatedList.isEmpty()) {
+                                navController.popBackStack()
+                            }
+                        },
+                        onEditClick = { mediaItem ->
+                            editingMediaItem = mediaItem
+                            if (mediaItem.isVideo) {
+                                navController.navigate("video_editor")
+                            } else {
+                                navController.navigate("photo_editor")
+                            }
+                        },
                         sharedTransitionScope = this@SharedTransitionLayout,
                         animatedVisibilityScope = this@composable
                     )
+                }
+
+                composable(
+                    route = "photo_editor",
+                    enterTransition = {
+                        fadeIn(tween(300, easing = FastOutSlowInEasing))
+                    },
+                    exitTransition = {
+                        fadeOut(tween(300, easing = FastOutSlowInEasing))
+                    },
+                    popEnterTransition = {
+                        fadeIn(tween(300, easing = FastOutSlowInEasing))
+                    },
+                    popExitTransition = {
+                        fadeOut(tween(300, easing = FastOutSlowInEasing))
+                    }
+                ) {
+                    editingMediaItem?.let { item ->
+                        PhotoEditorScreen(
+                            mediaItem = item,
+                            onNavigateBack = { navController.popBackStack() },
+                            onSaveSuccess = { _ ->
+                                navController.popBackStack()
+                            }
+                        )
+                    } ?: LaunchedEffect(Unit) {
+                        navController.popBackStack()
+                    }
+                }
+
+                composable(
+                    route = "video_editor",
+                    enterTransition = {
+                        fadeIn(tween(300, easing = FastOutSlowInEasing))
+                    },
+                    exitTransition = {
+                        fadeOut(tween(300, easing = FastOutSlowInEasing))
+                    },
+                    popEnterTransition = {
+                        fadeIn(tween(300, easing = FastOutSlowInEasing))
+                    },
+                    popExitTransition = {
+                        fadeOut(tween(300, easing = FastOutSlowInEasing))
+                    }
+                ) {
+                    editingMediaItem?.let { item ->
+                        VideoEditorScreen(
+                            mediaItem = item,
+                            onNavigateBack = { navController.popBackStack() },
+                            onSaveSuccess = { _ ->
+                                navController.popBackStack()
+                            }
+                        )
+                    } ?: LaunchedEffect(Unit) {
+                        navController.popBackStack()
+                    }
                 }
 
                 composable("settings") {
@@ -263,6 +340,29 @@ fun NavGraph(
                     UpdatePage(
                         onNavigateBack = { navController.popBackStack() },
                         triggerUpdate = false
+                    )
+                }
+
+                composable(
+                    route = "trash",
+                    enterTransition = {
+                        fadeIn(tween(300, easing = FastOutSlowInEasing))
+                    },
+                    exitTransition = {
+                        fadeOut(tween(300, easing = FastOutSlowInEasing))
+                    },
+                    popEnterTransition = {
+                        fadeIn(tween(300, easing = FastOutSlowInEasing))
+                    },
+                    popExitTransition = {
+                        fadeOut(tween(300, easing = FastOutSlowInEasing))
+                    }
+                ) {
+                    TrashScreen(
+                        repository = repository,
+                        onBackClick = { navController.popBackStack() },
+                        sharedTransitionScope = this@SharedTransitionLayout,
+                        animatedVisibilityScope = this@composable
                     )
                 }
             }

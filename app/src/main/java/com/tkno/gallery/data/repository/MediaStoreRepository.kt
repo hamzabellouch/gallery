@@ -1,11 +1,13 @@
 package com.tkno.gallery.data.repository
 
+import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
 import android.database.ContentObserver
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
@@ -21,6 +23,83 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class MediaStoreRepository(private val context: Context) {
+
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    fun getTrashedMediaItemsFlow(): Flow<List<MediaItem>> = callbackFlow {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                trySend(fetchTrashedMediaItemsSync())
+            }
+
+            override fun onChange(selfChange: Boolean) {
+                onChange(selfChange, null)
+            }
+        }
+
+        val resolver = context.contentResolver
+
+        try {
+            resolver.registerContentObserver(
+                MediaStore.AUTHORITY_URI,
+                true,
+                observer
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        trySend(fetchTrashedMediaItemsSync())
+
+        awaitClose {
+            try {
+                resolver.unregisterContentObserver(observer)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+        .debounce(200)
+        .flowOn(Dispatchers.IO)
+
+    fun fetchTrashedMediaItemsSync(): List<MediaItem> {
+        val trashedList = mutableListOf<MediaItem>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bundle = Bundle().apply {
+                putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_ONLY)
+                putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC")
+            }
+            val projection = arrayOf(
+                MediaStore.Files.FileColumns._ID,
+                MediaStore.Files.FileColumns.DISPLAY_NAME,
+                MediaStore.Files.FileColumns.DATA,
+                MediaStore.Files.FileColumns.SIZE,
+                MediaStore.Files.FileColumns.DATE_ADDED,
+                MediaStore.Files.FileColumns.DATE_MODIFIED,
+                "datetaken",
+                MediaStore.Files.FileColumns.WIDTH,
+                MediaStore.Files.FileColumns.HEIGHT,
+                MediaStore.Files.FileColumns.MEDIA_TYPE,
+                MediaStore.Files.FileColumns.MIME_TYPE,
+                MediaStore.Files.FileColumns.DURATION,
+                MediaStore.Files.FileColumns.BUCKET_ID,
+                MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME
+            )
+            try {
+                context.contentResolver.query(
+                    MediaStore.Files.getContentUri("external"),
+                    projection,
+                    bundle,
+                    null
+                )?.use { cursor ->
+                    parseCursorToMediaList(cursor, "external", trashedList)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        trashedList.sortByDescending { it.dateAddedSec }
+        return trashedList
+    }
 
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     fun getMediaItemsFlow(): Flow<List<MediaItem>> = callbackFlow {

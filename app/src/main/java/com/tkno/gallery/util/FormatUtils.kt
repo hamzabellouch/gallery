@@ -13,7 +13,9 @@ import kotlin.math.pow
 object FormatUtils {
 
     private val headerDateFormatter = DateTimeFormatter.ofPattern("MMMM d, y", Locale.getDefault())
-    private val monthYearFormatter = DateTimeFormatter.ofPattern("MMM yyyy", Locale.ENGLISH)
+    private val monthHeaderFormatter = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())
+    private val yearHeaderFormatter = DateTimeFormatter.ofPattern("yyyy", Locale.getDefault())
+    private val monthYearFormatter = DateTimeFormatter.ofPattern("MMM yyyy", Locale.getDefault())
     private val headerDateFormat = SimpleDateFormat("MMMM d, y", Locale.getDefault())
     private val shortDateFormat = SimpleDateFormat("MMM d, y · HH:mm", Locale.getDefault())
     
@@ -23,6 +25,8 @@ object FormatUtils {
 
     // High-performance LRU Cache for formatted date headers to eliminate SimpleDateFormat allocation overhead
     private val dateHeaderCache = ConcurrentHashMap<Long, String>(128)
+    private val dateMonthHeaderCache = ConcurrentHashMap<Long, String>(128)
+    private val dateYearHeaderCache = ConcurrentHashMap<Long, String>(128)
     private val dateShortCache = ConcurrentHashMap<Long, String>(128)
     private val dateMonthYearCache = ConcurrentHashMap<Long, String>(128)
 
@@ -91,6 +95,34 @@ object FormatUtils {
             } catch (e: Exception) {
                 "Unknown Date"
             }
+        }
+    }
+
+    fun formatMonthHeader(timestampSec: Long): String {
+        if (timestampSec == 0L) return "Unknown Date"
+        val clampedSec = timestampSec.coerceIn(MIN_YEAR_1_SEC, MAX_YEAR_1_BILLION_SEC)
+        return try {
+            val localDate = Instant.ofEpochSecond(clampedSec).atZone(ZoneId.systemDefault()).toLocalDate()
+            val monthKey = localDate.year * 100L + localDate.monthValue
+            dateMonthHeaderCache.getOrPut(monthKey) {
+                localDate.format(monthHeaderFormatter)
+            }
+        } catch (e: Exception) {
+            "Unknown Date"
+        }
+    }
+
+    fun formatYearHeader(timestampSec: Long): String {
+        if (timestampSec == 0L) return "Unknown Date"
+        val clampedSec = timestampSec.coerceIn(MIN_YEAR_1_SEC, MAX_YEAR_1_BILLION_SEC)
+        return try {
+            val localDate = Instant.ofEpochSecond(clampedSec).atZone(ZoneId.systemDefault()).toLocalDate()
+            val yearKey = localDate.year.toLong()
+            dateYearHeaderCache.getOrPut(yearKey) {
+                localDate.format(yearHeaderFormatter)
+            }
+        } catch (e: Exception) {
+            "Unknown Date"
         }
     }
 
