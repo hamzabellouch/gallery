@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import androidx.compose.ui.platform.LocalConfiguration
@@ -89,11 +90,13 @@ fun MediaPagerScreen(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
     if (mediaItems.isEmpty()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black),
+                .background(if (isDark) Color.Black else MaterialTheme.colorScheme.background),
             contentAlignment = Alignment.Center
         ) {
             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -226,7 +229,7 @@ fun MediaPagerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black),
+                .background(if (isDark) Color.Black else MaterialTheme.colorScheme.background),
             contentAlignment = Alignment.Center
         ) {
             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -273,10 +276,14 @@ fun MediaPagerScreen(
         }
     }
 
+    LaunchedEffect(pagerState.currentPage) {
+        isZoomedIn = false
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(if (isDark) Color.Black else MaterialTheme.colorScheme.background)
     ) {
         HorizontalPager(
             state = pagerState,
@@ -335,7 +342,7 @@ fun MediaPagerScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color.Black)
+                                .background(if (isDark) Color.Black else MaterialTheme.colorScheme.background)
                         )
                     }
                 } else {
@@ -372,11 +379,16 @@ fun MediaPagerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val topCapsuleBg = if (isDark) Color.Black.copy(alpha = 0.5f) else MaterialTheme.colorScheme.background.copy(alpha = 0.88f)
+                    val topCapsuleContent = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+                    val topCapsuleElevation = if (isDark) 0.dp else 4.dp
+
                     // Back Button in a Circle
                     Surface(
                         shape = CircleShape,
-                        color = Color.Black.copy(alpha = 0.5f),
-                        contentColor = Color.White,
+                        color = topCapsuleBg,
+                        contentColor = topCapsuleContent,
+                        shadowElevation = topCapsuleElevation,
                         modifier = Modifier.size(44.dp)
                     ) {
                         IconButton(
@@ -386,7 +398,7 @@ fun MediaPagerScreen(
                             Icon(
                                 imageVector = CustomIcons.ChevronLeft,
                                 contentDescription = "Back",
-                                tint = Color.White,
+                                tint = topCapsuleContent,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -395,8 +407,9 @@ fun MediaPagerScreen(
                     // Capsule containing FitScreen (when zoomed), Rotate, and Three Dots (More)
                     Surface(
                         shape = CircleShape,
-                        color = Color.Black.copy(alpha = 0.5f),
-                        contentColor = Color.White,
+                        color = topCapsuleBg,
+                        contentColor = topCapsuleContent,
+                        shadowElevation = topCapsuleElevation,
                         modifier = Modifier
                             .height(44.dp)
                             .animateContentSize(spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow))
@@ -422,7 +435,7 @@ fun MediaPagerScreen(
                                     Icon(
                                         imageVector = CustomIcons.FitScreen,
                                         contentDescription = "Fit to Screen",
-                                        tint = Color.White,
+                                        tint = topCapsuleContent,
                                         modifier = Modifier.size(22.dp)
                                     )
                                 }
@@ -443,7 +456,7 @@ fun MediaPagerScreen(
                                     Icon(
                                         imageVector = CustomIcons.ScreenshotFrame2,
                                         contentDescription = "Capture Frame",
-                                        tint = Color.White,
+                                        tint = topCapsuleContent,
                                         modifier = Modifier.size(22.dp)
                                     )
                                 }
@@ -464,7 +477,7 @@ fun MediaPagerScreen(
                                 Icon(
                                     imageVector = CustomIcons.MobileRotate,
                                     contentDescription = "Rotate Screen",
-                                    tint = if (isLandscape) MaterialTheme.colorScheme.primary else Color.White,
+                                    tint = if (isLandscape) MaterialTheme.colorScheme.primary else topCapsuleContent,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
@@ -479,7 +492,7 @@ fun MediaPagerScreen(
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
                                     contentDescription = "More Options",
-                                    tint = Color.White,
+                                    tint = topCapsuleContent,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
@@ -504,10 +517,19 @@ fun MediaPagerScreen(
                     .fillMaxWidth()
             }
         ) {
+            val barBgColor = if (isDark) {
+                if (useClassicViewerBar) Color.Black.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.65f)
+            } else {
+                MaterialTheme.colorScheme.background.copy(alpha = if (useClassicViewerBar) 0.94f else 0.88f)
+            }
+            val barContentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+            val barElevation = if (isDark) 0.dp else 6.dp
+
             Surface(
-                color = if (useClassicViewerBar) Color.Black.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.65f),
+                color = barBgColor,
                 shape = if (useClassicViewerBar) RoundedCornerShape(0.dp) else CircleShape,
-                contentColor = Color.White,
+                contentColor = barContentColor,
+                shadowElevation = barElevation,
                 modifier = if (useClassicViewerBar) Modifier.fillMaxWidth() else Modifier.height(64.dp)
             ) {
                 Row(
@@ -543,13 +565,13 @@ fun MediaPagerScreen(
                         Icon(
                             imageVector = CustomIcons.Share,
                             contentDescription = "Share",
-                            tint = Color.White,
+                            tint = barContentColor,
                             modifier = Modifier.size(if (useClassicViewerBar) 24.dp else 22.dp)
                         )
                         Spacer(modifier = Modifier.height(if (useClassicViewerBar) 4.dp else 2.dp))
                         Text(
                             text = "Share",
-                            color = Color.White,
+                            color = barContentColor,
                             fontSize = if (useClassicViewerBar) 12.sp else 11.sp
                         )
                     }
@@ -567,13 +589,13 @@ fun MediaPagerScreen(
                             Icon(
                                 imageVector = CustomIcons.WandStars,
                                 contentDescription = "Auto",
-                                tint = Color.White,
+                                tint = barContentColor,
                                 modifier = Modifier.size(if (useClassicViewerBar) 24.dp else 22.dp)
                             )
                             Spacer(modifier = Modifier.height(if (useClassicViewerBar) 4.dp else 2.dp))
                             Text(
                                 text = "Auto",
-                                color = Color.White,
+                                color = barContentColor,
                                 fontSize = if (useClassicViewerBar) 12.sp else 11.sp
                             )
                         }
@@ -592,13 +614,13 @@ fun MediaPagerScreen(
                         Icon(
                             imageVector = if (isFav) Icons.Filled.Favorite else CustomIcons.Favorite,
                             contentDescription = if (isFav) "Unfavorite" else "Favorite",
-                            tint = if (isFav) Color.Red else Color.White,
+                            tint = if (isFav) Color.Red else barContentColor,
                             modifier = Modifier.size(if (useClassicViewerBar) 24.dp else 22.dp)
                         )
                         Spacer(modifier = Modifier.height(if (useClassicViewerBar) 4.dp else 2.dp))
                         Text(
                             text = if (isFav) "Unfavorite" else "Favorite",
-                            color = Color.White,
+                            color = barContentColor,
                             fontSize = if (useClassicViewerBar) 12.sp else 11.sp
                         )
                     }
@@ -615,13 +637,13 @@ fun MediaPagerScreen(
                         Icon(
                             imageVector = CustomIcons.Edit,
                             contentDescription = "Edit",
-                            tint = Color.White,
+                            tint = barContentColor,
                             modifier = Modifier.size(if (useClassicViewerBar) 24.dp else 22.dp)
                         )
                         Spacer(modifier = Modifier.height(if (useClassicViewerBar) 4.dp else 2.dp))
                         Text(
                             text = "Edit",
-                            color = Color.White,
+                            color = barContentColor,
                             fontSize = if (useClassicViewerBar) 12.sp else 11.sp
                         )
                     }
@@ -638,13 +660,13 @@ fun MediaPagerScreen(
                         Icon(
                             imageVector = CustomIcons.Delete,
                             contentDescription = "Trash",
-                            tint = Color.White,
+                            tint = barContentColor,
                             modifier = Modifier.size(if (useClassicViewerBar) 24.dp else 22.dp)
                         )
                         Spacer(modifier = Modifier.height(if (useClassicViewerBar) 4.dp else 2.dp))
                         Text(
                             text = "Trash",
-                            color = Color.White,
+                            color = barContentColor,
                             fontSize = if (useClassicViewerBar) 12.sp else 11.sp
                         )
                     }

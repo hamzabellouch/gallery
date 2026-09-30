@@ -12,6 +12,7 @@ import android.media.MediaMuxer
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.media3.common.Effect
@@ -42,6 +43,7 @@ object VideoEditorUtils {
         durationMs: Long,
         frameCount: Int = 8
     ): List<Bitmap> = withContext(Dispatchers.IO) {
+        val safeFrameCount = frameCount.coerceIn(1, 32)
         val bitmaps = mutableListOf<Bitmap>()
         val retriever = MediaMetadataRetriever()
         try {
@@ -53,25 +55,41 @@ object VideoEditorUtils {
                 durStr?.toLongOrNull() ?: 1000L
             }
 
-            val stepUs = (actualDurationMs * 1000L) / frameCount.coerceAtLeast(1)
-            for (i in 0 until frameCount) {
+            val stepUs = (actualDurationMs * 1000L) / safeFrameCount
+            val targetSize = 120
+
+            for (i in 0 until safeFrameCount) {
                 val timeUs = (i * stepUs).coerceAtMost(actualDurationMs * 1000L)
-                val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    retriever.getScaledFrameAtTime(
-                        timeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                        120,
-                        120
-                    )
-                } else {
-                    retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)?.let { original ->
-                        val scaled = Bitmap.createScaledBitmap(original, 120, 120, true)
-                        if (scaled != original) original.recycle()
-                        scaled
+                val rawFrame: Bitmap? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    try {
+                        retriever.getScaledFrameAtTime(
+                            timeUs,
+                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                            targetSize,
+                            targetSize
+                        )
+                    } catch (_: Exception) {
+                        retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                     }
+                } else {
+                    retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 }
-                if (frame != null) {
-                    bitmaps.add(frame)
+
+                if (rawFrame != null) {
+                    // Check if the returned bitmap exceeds target thumbnail bounds (preventing 4K/8K full frames in RAM)
+                    val boundedFrame = if (rawFrame.width > targetSize * 1.5f || rawFrame.height > targetSize * 1.5f) {
+                        val maxDim = maxOf(rawFrame.width, rawFrame.height)
+                        val targetW = ((rawFrame.width.toFloat() / maxDim) * targetSize).toInt().coerceAtLeast(1)
+                        val targetH = ((rawFrame.height.toFloat() / maxDim) * targetSize).toInt().coerceAtLeast(1)
+                        val scaled = Bitmap.createScaledBitmap(rawFrame, targetW, targetH, true)
+                        if (scaled != rawFrame) {
+                            rawFrame.recycle()
+                        }
+                        scaled
+                    } else {
+                        rawFrame
+                    }
+                    bitmaps.add(boundedFrame)
                 }
             }
         } catch (e: Exception) {
@@ -216,11 +234,12 @@ object VideoEditorUtils {
         rotationAngle: Float
     ): Uri? {
         var tempOutputFile: File? = null
+        var pfd: ParcelFileDescriptor? = null
         val extractor = MediaExtractor()
         var muxer: MediaMuxer? = null
 
         try {
-            val pfd = context.contentResolver.openFileDescriptor(sourceUri, "r") ?: return null
+            pfd = context.contentResolver.openFileDescriptor(sourceUri, "r") ?: return null
             extractor.setDataSource(pfd.fileDescriptor)
 
             tempOutputFile = File(context.cacheDir, "trimmed_${System.currentTimeMillis()}.mp4")
@@ -228,7 +247,7 @@ object VideoEditorUtils {
 
             val trackCount = extractor.trackCount
             val trackMap = HashMap<Int, Int>(trackCount)
-            var bufferSize = 1024 * 1024 // 1MB default
+            var bufferSize = 4 * 1024 * 1024 // Safe 4MB baseline for 4K / 8K video streams
 
             for (i in 0 until trackCount) {
                 val format = extractor.getTrackFormat(i)
@@ -240,16 +259,17 @@ object VideoEditorUtils {
                     trackMap[i] = muxerTrackIndex
 
                     if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
-                        val newSize = format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
-                        if (newSize > bufferSize) {
-                            bufferSize = newSize
-                        }
+                        try {
+                            val specifiedSize = format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
+                            if (specifiedSize > bufferSize) {
+                                bufferSize = specifiedSize
+                            }
+                        } catch (_: Exception) {}
                     }
                 }
             }
 
             if (trackMap.isEmpty()) {
-                pfd.close()
                 return null
             }
 
@@ -312,14 +332,17 @@ object VideoEditorUtils {
             muxer = null
             extractor.release()
             pfd.close()
+            pfd = null
 
             return saveFileToMediaStore(context, tempOutputFile, originalName)
         } catch (e: Exception) {
             e.printStackTrace()
-            try { muxer?.release() } catch (_: Exception) {}
-            try { extractor.release() } catch (_: Exception) {}
             tempOutputFile?.delete()
             return null
+        } finally {
+            try { muxer?.release() } catch (_: Exception) {}
+            try { extractor.release() } catch (_: Exception) {}
+            try { pfd?.close() } catch (_: Exception) {}
         }
     }
 

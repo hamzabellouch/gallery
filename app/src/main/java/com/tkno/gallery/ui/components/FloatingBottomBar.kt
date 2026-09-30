@@ -73,7 +73,7 @@ fun FloatingBottomBar(
             color = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
             shape = RoundedCornerShape(percent = 50),
             tonalElevation = 0.dp,
-            shadowElevation = 8.dp,
+            shadowElevation = 6.dp,
             modifier = Modifier
                 .height(64.dp)
                 .fillMaxWidth()

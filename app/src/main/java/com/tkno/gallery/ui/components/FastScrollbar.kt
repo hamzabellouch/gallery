@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -77,7 +78,7 @@ fun FastScrollbar(
     val isDynamicColor = prefs.getBoolean("dynamic_color", true)
     val dynamicColorIcons = prefs.getBoolean("dynamic_color_icons", false)
     val applyDynamicToIcons = isDynamicColor && dynamicColorIcons
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     val primaryColor = accentColor ?: if (applyDynamicToIcons) {
         MaterialTheme.colorScheme.primary
@@ -288,8 +289,8 @@ fun FastScrollbar(
                     exit = fadeOut() + scaleOut(targetScale = 0.85f)
                 ) {
                     Surface(
-                        color = if (isDark) Color(0xFF2C2F36) else Color(0xFF373B44),
-                        contentColor = Color.White,
+                        color = if (isDark) Color(0xFF2C2F36) else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                         shape = RoundedCornerShape(20.dp),
                         shadowElevation = 6.dp,
                         modifier = Modifier.padding(end = 10.dp)
@@ -298,7 +299,7 @@ fun FastScrollbar(
                             text = currentDateText,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
+                            color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                         )
                     }
@@ -312,13 +313,13 @@ fun FastScrollbar(
                         .shadow(elevation = if (isDragging) 8.dp else 4.dp, shape = CircleShape)
                         .clip(CircleShape)
                         .background(
-                            if (isDragging) primaryColor else if (isDark) Color(0xFF434750) else Color(0xFF5A5E6B)
+                            if (isDragging) primaryColor else if (isDark) Color(0xFF434750) else MaterialTheme.colorScheme.surfaceContainerHigh
                         )
                 ) {
                     Icon(
                         imageVector = Icons.Default.UnfoldMore,
                         contentDescription = "Timeline Fast Scroll",
-                        tint = Color.White,
+                        tint = if (isDragging) (if (isDark) Color.White else MaterialTheme.colorScheme.onPrimary) else if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(20.dp)
                     )
                 }

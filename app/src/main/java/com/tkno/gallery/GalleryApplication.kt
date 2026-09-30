@@ -1,6 +1,5 @@
 package com.tkno.gallery
 
-import android.app.Application
 import android.os.Build
 import coil3.ImageLoader
 import coil3.PlatformContext
@@ -39,12 +38,11 @@ class GalleryApplication : App(), SingletonImageLoader.Factory {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        MemoryManager.onTrimMemory(level)
+        MemoryManager.onTrimMemory(this, level)
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
-        MemoryManager.onLowMemory()
+        MemoryManager.onLowMemory(this)
     }
 }
-

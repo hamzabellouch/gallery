@@ -157,8 +157,7 @@ class MediaStoreRepository(private val context: Context) {
         .debounce(200)
         .flowOn(Dispatchers.IO)
 
-    suspend fun getAlbums(): List<Album> = withContext(Dispatchers.IO) {
-        val mediaList = fetchMediaItemsSync()
+    fun getAlbumsFromMediaList(mediaList: List<MediaItem>): List<Album> {
         val albumMap = LinkedHashMap<String, MutableList<MediaItem>>()
 
         for (item in mediaList) {
@@ -166,7 +165,7 @@ class MediaStoreRepository(private val context: Context) {
             albumMap.getOrPut(compositeKey) { mutableListOf() }.add(item)
         }
 
-        return@withContext albumMap.map { (key, items) ->
+        return albumMap.map { (key, items) ->
             val displayName = items.firstOrNull { it.albumName.isNotBlank() }?.albumName ?: "Other"
             val isOnSdCard = items.any { isSdCardVolume(it.volumeName) || isPathOnSdCard(it.path) }
 
@@ -179,6 +178,11 @@ class MediaStoreRepository(private val context: Context) {
                 isOnSdCard = isOnSdCard
             )
         }.sortedByDescending { it.itemCount }
+    }
+
+    suspend fun getAlbums(): List<Album> = withContext(Dispatchers.IO) {
+        val mediaList = fetchMediaItemsSync()
+        return@withContext getAlbumsFromMediaList(mediaList)
     }
 
     private fun getVolumeNames(): List<String> {

@@ -26,15 +26,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.graphics.Bitmap
+import android.os.Build
 import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
+import coil3.request.bitmapConfig
 import coil3.request.crossfade
 import coil3.size.Precision
 import com.tkno.gallery.data.model.MediaItem
@@ -73,6 +77,8 @@ fun MediaGridItem(
     animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
     val context = LocalContext.current
+
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     val shape = if (roundedCorners) {
         when {
@@ -136,6 +142,13 @@ fun MediaGridItem(
             .data(item.uri)
             .size(targetThumbnailPx)
             .precision(Precision.INEXACT)
+            .bitmapConfig(
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Bitmap.Config.HARDWARE
+                } else {
+                    Bitmap.Config.RGB_565
+                }
+            )
             .crossfade(false)
             .memoryCachePolicy(CachePolicy.ENABLED)
             .diskCachePolicy(CachePolicy.ENABLED)
@@ -234,15 +247,16 @@ fun MediaGridItem(
             if (item.isVideo) {
                 Surface(
                     shape = CircleShape,
-                    color = Color.Black.copy(alpha = 0.5f),
-                    contentColor = Color.White,
+                    color = if (isDark) Color.Black.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                    contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
+                    shadowElevation = if (isDark) 0.dp else 2.dp,
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(if (columnCount == 4) 3.dp else 4.dp)
                 ) {
                     Row(
                         modifier = Modifier.padding(
-                            horizontal = if (columnCount == 4) 3.5.dp else 4.5.dp,
+                            horizontal = if (columnCount == 4) 4.dp else 5.dp,
                             vertical = 1.dp
                         ),
                         verticalAlignment = Alignment.CenterVertically
@@ -250,15 +264,15 @@ fun MediaGridItem(
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(if (columnCount == 4) 8.5.dp else 10.dp)
                         )
                         Spacer(modifier = Modifier.width(1.5.dp))
                         Text(
                             text = FormatUtils.formatDuration(item.durationMs),
-                            color = Color.White,
+                            color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                             fontSize = if (columnCount == 4) 8.sp else 9.5.sp,
-                            fontWeight = FontWeight.Normal
+                            fontWeight = if (isDark) FontWeight.Normal else FontWeight.SemiBold
                         )
                     }
                 }
@@ -267,8 +281,9 @@ fun MediaGridItem(
             // Minimal video icon capsule for month view
             Surface(
                 shape = CircleShape,
-                color = Color.Black.copy(alpha = 0.5f),
-                contentColor = Color.White,
+                color = if (isDark) Color.Black.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
+                shadowElevation = if (isDark) 0.dp else 1.dp,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(1.5.dp)
@@ -280,7 +295,7 @@ fun MediaGridItem(
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(7.dp)
                     )
                 }

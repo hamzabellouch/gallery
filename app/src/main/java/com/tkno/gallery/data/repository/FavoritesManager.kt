@@ -26,6 +26,14 @@ class FavoritesManager(context: Context) {
         _favoriteUris.value = current
     }
 
+    fun addFavorites(uriStrings: Collection<String>) {
+        if (uriStrings.isEmpty()) return
+        val current = _favoriteUris.value.toMutableSet()
+        current.addAll(uriStrings)
+        prefs.edit().putStringSet("favorite_uris", current).apply()
+        _favoriteUris.value = current
+    }
+
     fun isFavorite(uriString: String): Boolean {
         return _favoriteUris.value.contains(uriString)
     }

@@ -69,10 +69,15 @@ import com.tkno.gallery.theme.TaskbarInactiveVariantLight
 import com.tkno.gallery.theme.TaskbarIndicatorCapsuleDark
 import com.tkno.gallery.theme.TaskbarIndicatorCapsuleLight
 import com.tkno.gallery.util.FormatUtils
+import com.tkno.gallery.ui.screens.menu.MenuScreen
+import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import com.tkno.gallery.ui.screens.menu.MenuScreen
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Stable
 enum class GalleryGridLevel(val columnCount: Int) {
@@ -118,12 +123,81 @@ fun HomeScreen(
     onAlbumClick: (Album) -> Unit = {},
     onNavigateToRoute: (String) -> Unit = {},
     onOpenDrawer: () -> Unit = {},
+    onAddFavorites: (Collection<String>) -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+
+    val exportFavoritesLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val favItems = mediaItems.filter { it.isFavorite }
+                    val content = favItems.joinToString("\n") { it.name }
+                    context.contentResolver.openOutputStream(uri)?.use { os ->
+                        os.write(content.toByteArray(Charsets.UTF_8))
+                    }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Exported ${favItems.size} favorites", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Export failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    val importFavoritesLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val lines = context.contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { seq ->
+                        seq.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+                    } ?: emptySet()
+
+                    if (lines.isEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "File is empty", Toast.LENGTH_SHORT).show()
+                        }
+                        return@launch
+                    }
+
+                    val matchedUris = mediaItems.filter { item ->
+                        lines.any { line ->
+                            item.name.equals(line, ignoreCase = true) ||
+                            item.path.equals(line, ignoreCase = true) ||
+                            item.path.endsWith("/$line", ignoreCase = true) ||
+                            item.uri.toString().equals(line, ignoreCase = true)
+                        }
+                    }.map { it.uri.toString() }
+
+                    if (matchedUris.isNotEmpty()) {
+                        onAddFavorites(matchedUris)
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Imported ${matchedUris.size} favorites", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "No matching media files found in gallery", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Import failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
 
     val prefs = remember { context.getSharedPreferences("gallery_prefs", Context.MODE_PRIVATE) }
 
@@ -132,7 +206,7 @@ fun HomeScreen(
     }
 
     var showResolutionBadges by remember {
-        mutableStateOf(prefs.getBoolean("show_resolution_badges", true))
+        mutableStateOf(prefs.getBoolean("show_resolution_badges", false))
     }
 
     var isShortsModeActive by rememberSaveable {
@@ -144,7 +218,7 @@ fun HomeScreen(
             if (key == "use_classic_taskbar") {
                 useClassicTaskbar = p.getBoolean("use_classic_taskbar", false)
             } else if (key == "show_resolution_badges") {
-                showResolutionBadges = p.getBoolean("show_resolution_badges", true)
+                showResolutionBadges = p.getBoolean("show_resolution_badges", false)
             }
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -227,19 +301,16 @@ fun HomeScreen(
 
     var isSelectionMode by rememberSaveable { mutableStateOf(false) }
     val selectedItemIds = remember { mutableStateListOf<Long>() }
-    val selectedAlbumIds = remember { mutableStateListOf<String>() }
     var showMoreMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(currentTab) {
         isSelectionMode = false
         selectedItemIds.clear()
-        selectedAlbumIds.clear()
     }
 
     BackHandler(enabled = isSelectionMode) {
         isSelectionMode = false
         selectedItemIds.clear()
-        selectedAlbumIds.clear()
     }
 
     val deleteLauncher = rememberLauncherForActivityResult(
@@ -308,21 +379,6 @@ fun HomeScreen(
         isSelectionMode = true
         selectedItemIds.clear()
         selectedItemIds.add(initialId)
-        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-    }
-
-    fun toggleAlbumSelection(id: String) {
-        if (selectedAlbumIds.contains(id)) {
-            selectedAlbumIds.remove(id)
-        } else {
-            selectedAlbumIds.add(id)
-        }
-    }
-
-    fun enterAlbumSelectionMode(initialId: String) {
-        isSelectionMode = true
-        selectedAlbumIds.clear()
-        selectedAlbumIds.add(initialId)
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
@@ -413,10 +469,6 @@ fun HomeScreen(
                 ConsoleContent(
                     albums = albums,
                     state = albumsGridState,
-                    isSelectionMode = isSelectionMode,
-                    selectedAlbumIds = selectedAlbumIds,
-                    onToggleSelect = ::toggleAlbumSelection,
-                    onEnterSelectionMode = ::enterAlbumSelectionMode,
                     onAlbumClick = onAlbumClick
                 )
             }
@@ -463,7 +515,7 @@ fun HomeScreen(
         }
 
         // 2. Floating Top Bar Capsules (Left & Right) with NO solid bar background
-        val selectedCount = if (currentTab == Tab.Console) selectedAlbumIds.size else selectedItemIds.size
+        val selectedCount = selectedItemIds.size
         Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -490,7 +542,6 @@ fun HomeScreen(
                             onClick = {
                                 isSelectionMode = false
                                 selectedItemIds.clear()
-                                selectedAlbumIds.clear()
                             },
                             modifier = Modifier.size(38.dp)
                         ) {
@@ -535,110 +586,92 @@ fun HomeScreen(
                 }
             }
 
-            // Right Capsule: [ Heart Icon + 3-dots Menu Icon ]
-            Surface(
-                color = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
-                shape = RoundedCornerShape(percent = 50),
-                tonalElevation = 0.dp,
-                shadowElevation = 6.dp,
-                modifier = Modifier.height(46.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 4.dp)
+            // Right Capsule: [ Heart Icon + 3-dots Menu Icon ] (Hidden on Albums tab)
+            if (currentTab != Tab.Console) {
+                Surface(
+                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+                    shape = RoundedCornerShape(percent = 50),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.height(46.dp)
                 ) {
-                    if (isSelectionMode) {
-                        // Action 1: Share
-                        IconButton(
-                            onClick = { shareSelectedItems() },
-                            enabled = selectedCount > 0 && currentTab != Tab.Console,
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Share",
-                                tint = if (selectedCount > 0 && currentTab != Tab.Console) {
-                                    MaterialTheme.colorScheme.onSurface
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                },
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // Action 2: Trash / Delete
-                        IconButton(
-                            onClick = { deleteSelectedItems() },
-                            enabled = selectedCount > 0 && currentTab != Tab.Console,
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Icon(
-                                imageVector = CustomIcons.Delete,
-                                contentDescription = "Trash",
-                                tint = if (selectedCount > 0 && currentTab != Tab.Console) {
-                                    MaterialTheme.colorScheme.onSurface
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                },
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // Action 3: 3-dots Menu
-                        Box {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    ) {
+                        if (isSelectionMode) {
+                            // Action 1: Share
                             IconButton(
-                                onClick = { showMoreMenu = true },
+                                onClick = { shareSelectedItems() },
+                                enabled = selectedCount > 0,
                                 modifier = Modifier.size(38.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "More Options",
-                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Share",
+                                    tint = if (selectedCount > 0) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                    },
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
 
-                            val isAllSelected = if (currentTab == Tab.Console) {
-                                selectedAlbumIds.size == albums.size && albums.isNotEmpty()
-                            } else {
+                            // Action 2: Trash / Delete
+                            IconButton(
+                                onClick = { deleteSelectedItems() },
+                                enabled = selectedCount > 0,
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                Icon(
+                                    imageVector = CustomIcons.Delete,
+                                    contentDescription = "Trash",
+                                    tint = if (selectedCount > 0) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                    },
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            // Action 3: 3-dots Menu
+                            Box {
+                                IconButton(
+                                    onClick = { showMoreMenu = true },
+                                    modifier = Modifier.size(38.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "More Options",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+
                                 val currentItems = when (currentTab) {
                                     Tab.Media -> filteredMediaItems
                                     Tab.Videos -> filteredMediaItems.filter { it.isVideo }
                                     Tab.Images -> filteredMediaItems.filter { !it.isVideo }
                                     else -> filteredMediaItems
                                 }
-                                selectedItemIds.size == currentItems.size && currentItems.isNotEmpty()
-                            }
+                                val isAllSelected = selectedItemIds.size == currentItems.size && currentItems.isNotEmpty()
 
-                            DropdownMenu(
-                                expanded = showMoreMenu,
-                                onDismissRequest = { showMoreMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text(if (isAllSelected) "Deselect all" else "Select all") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.SelectAll,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        if (currentTab == Tab.Console) {
-                                            val allAlbumIds = albums.map { it.id }
-                                            if (selectedAlbumIds.containsAll(allAlbumIds)) {
-                                                selectedAlbumIds.clear()
-                                            } else {
-                                                selectedAlbumIds.clear()
-                                                selectedAlbumIds.addAll(allAlbumIds)
-                                            }
-                                        } else {
-                                            val currentItems = when (currentTab) {
-                                                Tab.Media -> filteredMediaItems
-                                                Tab.Videos -> filteredMediaItems.filter { it.isVideo }
-                                                Tab.Images -> filteredMediaItems.filter { !it.isVideo }
-                                                else -> filteredMediaItems
-                                            }
+                                DropdownMenu(
+                                    expanded = showMoreMenu,
+                                    onDismissRequest = { showMoreMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (isAllSelected) "Deselect all" else "Select all") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.SelectAll,
+                                                contentDescription = null
+                                            )
+                                        },
+                                        onClick = {
+                                            showMoreMenu = false
                                             val allIds = currentItems.map { it.id }
                                             if (selectedItemIds.containsAll(allIds)) {
                                                 selectedItemIds.clear()
@@ -647,103 +680,137 @@ fun HomeScreen(
                                                 selectedItemIds.addAll(allIds)
                                             }
                                         }
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Trash") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = CustomIcons.Delete,
-                                            contentDescription = null
-                                        )
-                                    },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Trash") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = CustomIcons.Delete,
+                                                contentDescription = null
+                                            )
+                                        },
+                                        onClick = {
+                                            showMoreMenu = false
+                                            isSelectionMode = false
+                                            selectedItemIds.clear()
+                                            onNavigateToRoute("trash")
+                                        }
+                                    )
+                                }
+                            }
+                        } else {
+                            if (currentTab == Tab.Videos) {
+                                IconButton(
                                     onClick = {
-                                        showMoreMenu = false
-                                        isSelectionMode = false
-                                        selectedItemIds.clear()
-                                        selectedAlbumIds.clear()
-                                        onNavigateToRoute("trash")
-                                    }
-                                )
-                            }
-                        }
-                    } else {
-                        if (currentTab == Tab.Videos) {
-                            IconButton(
-                                onClick = {
-                                    isShortsModeActive = !isShortsModeActive
-                                    prefs.edit().putBoolean("video_shorts_mode", isShortsModeActive).apply()
-                                },
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Icon(
-                                    imageVector = CustomIcons.KeyboardDoubleArrowDown,
-                                    contentDescription = "TikTok Scrolling Video Mode",
-                                    tint = if (isShortsModeActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-
-                        if (currentTab == Tab.Media || currentTab == Tab.Videos || currentTab == Tab.Images) {
-                            IconButton(
-                                onClick = {
-                                    isFavoriteFilterActive = !isFavoriteFilterActive
-                                },
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isFavoriteFilterActive) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                    contentDescription = "Favorites Only",
-                                    tint = if (isFavoriteFilterActive) Color.Red else MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-
-                        Box {
-                            IconButton(
-                                onClick = { showMoreMenu = true },
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "More Options",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                        isShortsModeActive = !isShortsModeActive
+                                        prefs.edit().putBoolean("video_shorts_mode", isShortsModeActive).apply()
+                                    },
+                                    modifier = Modifier.size(38.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = CustomIcons.KeyboardDoubleArrowDown,
+                                        contentDescription = "TikTok Scrolling Video Mode",
+                                        tint = if (isShortsModeActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
 
-                            DropdownMenu(
-                                expanded = showMoreMenu,
-                                onDismissRequest = { showMoreMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Select items") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Outlined.CheckCircle,
-                                            contentDescription = null
-                                        )
-                                    },
+                            if (currentTab == Tab.Media || currentTab == Tab.Videos || currentTab == Tab.Images) {
+                                IconButton(
                                     onClick = {
-                                        showMoreMenu = false
-                                        isSelectionMode = true
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Trash") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = CustomIcons.Delete,
-                                            contentDescription = null
-                                        )
+                                        isFavoriteFilterActive = !isFavoriteFilterActive
                                     },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        onNavigateToRoute("trash")
+                                    modifier = Modifier.size(38.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isFavoriteFilterActive) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                        contentDescription = "Favorites Only",
+                                        tint = if (isFavoriteFilterActive) Color.Red else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            Box {
+                                IconButton(
+                                    onClick = { showMoreMenu = true },
+                                    modifier = Modifier.size(38.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "More Options",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+
+                                DropdownMenu(
+                                    expanded = showMoreMenu,
+                                    onDismissRequest = { showMoreMenu = false }
+                                ) {
+                                    if (isFavoriteFilterActive) {
+                                        DropdownMenuItem(
+                                            text = { Text("Export favorites") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.UploadFile,
+                                                    contentDescription = null
+                                                )
+                                            },
+                                            onClick = {
+                                                showMoreMenu = false
+                                                val favCount = mediaItems.count { it.isFavorite }
+                                                if (favCount == 0) {
+                                                    Toast.makeText(context, "No favorites to export", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    val dateStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                                                    exportFavoritesLauncher.launch("favorites_$dateStr.txt")
+                                                }
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Import favorites") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.FileDownload,
+                                                    contentDescription = null
+                                                )
+                                            },
+                                            onClick = {
+                                                showMoreMenu = false
+                                                importFavoritesLauncher.launch(arrayOf("text/plain", "text/*", "*/*"))
+                                            }
+                                        )
                                     }
-                                )
+
+                                    DropdownMenuItem(
+                                        text = { Text("Select items") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Outlined.CheckCircle,
+                                                contentDescription = null
+                                            )
+                                        },
+                                        onClick = {
+                                            showMoreMenu = false
+                                            isSelectionMode = true
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Trash") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = CustomIcons.Delete,
+                                                contentDescription = null
+                                            )
+                                        },
+                                        onClick = {
+                                            showMoreMenu = false
+                                            onNavigateToRoute("trash")
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -801,18 +868,18 @@ private fun MediaGridContent(
     val context = LocalContext.current
     val prefs = remember(context) { context.getSharedPreferences("gallery_prefs", Context.MODE_PRIVATE) }
     var showResolutionBadges by remember {
-        mutableStateOf(prefs.getBoolean("show_resolution_badges", true))
+        mutableStateOf(prefs.getBoolean("show_resolution_badges", false))
     }
     var cardRoundedCorners by remember {
-        mutableStateOf(prefs.getBoolean("card_rounded_corners", true))
+        mutableStateOf(prefs.getBoolean("card_rounded_corners", false))
     }
 
     DisposableEffect(prefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
             if (key == "show_resolution_badges") {
-                showResolutionBadges = p.getBoolean("show_resolution_badges", true)
+                showResolutionBadges = p.getBoolean("show_resolution_badges", false)
             } else if (key == "card_rounded_corners") {
-                cardRoundedCorners = p.getBoolean("card_rounded_corners", true)
+                cardRoundedCorners = p.getBoolean("card_rounded_corners", false)
             }
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -976,10 +1043,6 @@ private fun MediaGridContent(
 private fun ConsoleContent(
     albums: List<Album>,
     state: LazyGridState = rememberLazyGridState(),
-    isSelectionMode: Boolean = false,
-    selectedAlbumIds: List<String> = emptyList(),
-    onToggleSelect: (String) -> Unit = {},
-    onEnterSelectionMode: (String) -> Unit = {},
     onAlbumClick: (Album) -> Unit
 ) {
     val context = LocalContext.current
@@ -1013,22 +1076,12 @@ private fun ConsoleContent(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(albums, key = { it.id }, contentType = { "album" }) { album ->
-                val isSelected = album.id in selectedAlbumIds
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
-                        .let { mod ->
-                            if (isSelectionMode && isSelected) {
-                                mod.border(2.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
-                            } else mod
-                        }
                         .clickable {
-                            if (isSelectionMode) {
-                                onToggleSelect(album.id)
-                            } else {
-                                onAlbumClick(album)
-                            }
+                            onAlbumClick(album)
                         },
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
@@ -1063,53 +1116,16 @@ private fun ConsoleContent(
                                 )
                             }
 
-                            if (album.isOnSdCard && !isSelectionMode) {
-                                Surface(
+                            if (album.isOnSdCard) {
+                                Icon(
+                                    imageVector = CustomIcons.SdCard,
+                                    contentDescription = "SD Card",
                                     modifier = Modifier
                                         .padding(8.dp)
+                                        .size(20.dp)
                                         .align(Alignment.TopEnd),
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
-                                    shadowElevation = 2.dp
-                                ) {
-                                    Icon(
-                                        imageVector = CustomIcons.SdCard,
-                                        contentDescription = "SD Card",
-                                        modifier = Modifier
-                                            .padding(4.dp)
-                                            .size(18.dp),
-                                        tint = iconColor
-                                    )
-                                }
-                            }
-
-                            if (isSelectionMode) {
-                                Box(
-                                    modifier = Modifier
-                                        .padding(8.dp)
-                                        .size(24.dp)
-                                        .align(Alignment.TopStart)
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (isSelected) MaterialTheme.colorScheme.primary
-                                            else Color.Black.copy(alpha = 0.45f)
-                                        )
-                                        .let { mod ->
-                                            if (!isSelected) {
-                                                mod.border(1.5.dp, Color.White.copy(alpha = 0.85f), CircleShape)
-                                            } else mod
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = "Selected",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
+                                    tint = Color.White
+                                )
                             }
                         }
                         Column(

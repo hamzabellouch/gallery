@@ -45,10 +45,10 @@ fun TrashScreen(
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("gallery_prefs", Context.MODE_PRIVATE) }
     var showResolutionBadges by remember {
-        mutableStateOf(prefs.getBoolean("show_resolution_badges", true))
+        mutableStateOf(prefs.getBoolean("show_resolution_badges", false))
     }
     var cardRoundedCorners by remember {
-        mutableStateOf(prefs.getBoolean("card_rounded_corners", true))
+        mutableStateOf(prefs.getBoolean("card_rounded_corners", false))
     }
 
     val trashedItems by repository.getTrashedMediaItemsFlow().collectAsState(initial = emptyList())
@@ -60,9 +60,9 @@ fun TrashScreen(
     DisposableEffect(prefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
             if (key == "show_resolution_badges") {
-                showResolutionBadges = p.getBoolean("show_resolution_badges", true)
+                showResolutionBadges = p.getBoolean("show_resolution_badges", false)
             } else if (key == "card_rounded_corners") {
-                cardRoundedCorners = p.getBoolean("card_rounded_corners", true)
+                cardRoundedCorners = p.getBoolean("card_rounded_corners", false)
             }
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)

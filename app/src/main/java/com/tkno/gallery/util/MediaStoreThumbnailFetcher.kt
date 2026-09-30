@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.CancellationSignal
@@ -30,8 +31,9 @@ import kotlin.coroutines.coroutineContext
  * Features:
  * 1. Bounded Parallelism (8 concurrent threads): Prevents Binder IPC & system_server saturation during rapid flings.
  * 2. Hardware CancellationSignal: Immediately aborts OS thumbnail decoding when items scroll off-screen.
- * 3. L1 High-Speed In-Memory Cache: Sub-millisecond synchronous bitmap retrieval on scroll revisit.
+ * 3. Byte-budgeted L1 High-Speed In-Memory Cache (24MB limit): Sub-millisecond synchronous bitmap retrieval on scroll revisit without memory leaks.
  * 4. Adaptive Tier Sizing: Maps Year View to fast 96x96 MICRO_KIND, Month View to 160x160, and Day Views to 256-384px.
+ * 5. Full-Resolution Guard: Transparently ignores full-resolution requests (>512px or Size.ORIGINAL) allowing full-size decoders to process.
  */
 class MediaStoreThumbnailFetcher(
     private val context: Context,
@@ -43,9 +45,16 @@ class MediaStoreThumbnailFetcher(
         // Dedicated thread pool with max 8 parallel queries to protect Android MediaProvider Binder IPC
         private val thumbnailDispatcher = Dispatchers.IO.limitedParallelism(8)
 
-        // High-speed L1 in-memory bitmap cache (300 items) for instant sub-millisecond retrieval
-        private val l1Cache = object : LruCache<String, Bitmap>(300) {
-            override fun sizeOf(key: String, value: Bitmap): Int = 1
+        // Safe 24MB Byte-measured L1 in-memory bitmap cache for instant sub-millisecond retrieval
+        private const val MAX_L1_CACHE_BYTES = 24 * 1024 * 1024
+        private val l1Cache = object : LruCache<String, Bitmap>(MAX_L1_CACHE_BYTES) {
+            override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+        }
+
+        fun clearL1Cache() {
+            try {
+                l1Cache.evictAll()
+            } catch (_: Throwable) {}
         }
     }
 
@@ -121,7 +130,7 @@ class MediaStoreThumbnailFetcher(
             }
         }
 
-        // 2. Android 8 - 9 (API 26-28): Use MediaStore Thumbnails API
+        // 2. Android 8 - 9 (API 26-28): Use MediaStore Thumbnails API with RGB_565 config for 50% RAM savings
         try {
             val id = ContentUris.parseId(uri)
             val uriString = uri.toString()
@@ -134,13 +143,17 @@ class MediaStoreThumbnailFetcher(
                 MediaStore.Images.Thumbnails.MINI_KIND
             }
 
-            return if (isVideo) {
+            val decodeOptions = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+
+            val bmp = if (isVideo) {
                 @Suppress("DEPRECATION")
                 MediaStore.Video.Thumbnails.getThumbnail(
                     resolver,
                     id,
                     kind,
-                    null
+                    decodeOptions
                 )
             } else {
                 @Suppress("DEPRECATION")
@@ -148,9 +161,10 @@ class MediaStoreThumbnailFetcher(
                     resolver,
                     id,
                     kind,
-                    null
+                    decodeOptions
                 )
             }
+            if (bmp != null) return bmp
         } catch (_: Throwable) {
             // Fallback
         }
@@ -160,13 +174,24 @@ class MediaStoreThumbnailFetcher(
 
     class Factory(private val context: Context) : Fetcher.Factory<Uri> {
         override fun create(data: Uri, options: Options, imageLoader: ImageLoader): Fetcher? {
-            // Intercept media content URIs (images and videos)
+            // Intercept media content URIs (images and videos) only for thumbnail-sized requests
             val scheme = data.scheme
             val authority = data.authority
             if (scheme == ContentResolver.SCHEME_CONTENT &&
                 (authority == MediaStore.AUTHORITY || authority == "media")
             ) {
-                return MediaStoreThumbnailFetcher(context, data, options)
+                val widthDim = options.size.width
+                val heightDim = options.size.height
+
+                // Only intercept pixel-bounded thumbnail requests (<= 512px in both dimensions)
+                // Unconstrained / Size.ORIGINAL / full-res requests will be handled by standard decoders
+                if (widthDim is coil3.size.Dimension.Pixels && heightDim is coil3.size.Dimension.Pixels) {
+                    val reqW = widthDim.px
+                    val reqH = heightDim.px
+                    if (reqW <= 512 && reqH <= 512) {
+                        return MediaStoreThumbnailFetcher(context, data, options)
+                    }
+                }
             }
             return null
         }

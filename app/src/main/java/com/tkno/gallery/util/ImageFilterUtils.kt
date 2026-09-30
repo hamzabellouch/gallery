@@ -18,7 +18,7 @@ import androidx.compose.ui.graphics.ColorMatrix as ComposeColorMatrix
 import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.InputStream
+import kotlin.math.roundToInt
 
 enum class FilterType(val displayName: String) {
     NONE("None"),
@@ -98,31 +98,29 @@ object ImageFilterUtils {
         reqHeight: Int = 1200
     ): Bitmap? = withContext(Dispatchers.IO) {
         try {
-            var inputStream: InputStream? = context.contentResolver.openInputStream(uri)
             val options = BitmapFactory.Options().apply {
                 inJustDecodeBounds = true
             }
-            BitmapFactory.decodeStream(inputStream, null, options)
-            inputStream?.close()
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                BitmapFactory.decodeStream(inputStream, null, options)
+            } ?: return@withContext null
 
             options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
             options.inJustDecodeBounds = false
             options.inPreferredConfig = Bitmap.Config.ARGB_8888
 
-            inputStream = context.contentResolver.openInputStream(uri)
-            var bitmap = BitmapFactory.decodeStream(inputStream, null, options)
-            inputStream?.close()
+            var bitmap = context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                BitmapFactory.decodeStream(inputStream, null, options)
+            } ?: return@withContext null
 
-            if (bitmap != null) {
-                // Check EXIF orientation
-                val orientation = getExifOrientation(context, uri)
-                if (orientation != 0) {
-                    val matrix = Matrix().apply { postRotate(orientation.toFloat()) }
-                    val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-                    if (rotated != bitmap) {
-                        bitmap.recycle()
-                        bitmap = rotated
-                    }
+            // Check EXIF orientation
+            val orientation = getExifOrientation(context, uri)
+            if (orientation != 0) {
+                val matrix = Matrix().apply { postRotate(orientation.toFloat()) }
+                val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                if (rotated != bitmap) {
+                    bitmap.recycle()
+                    bitmap = rotated
                 }
             }
 
@@ -148,15 +146,20 @@ object ImageFilterUtils {
         return inSampleSize
     }
 
-    private fun getExifOrientation(context: Context, uri: Uri): Int {
+    fun getExifOrientation(context: Context, uri: Uri): Int {
         return try {
             context.contentResolver.openInputStream(uri)?.use { stream ->
                 val exif = ExifInterface(stream)
-                when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-                    ExifInterface.ORIENTATION_ROTATE_90 -> 90
-                    ExifInterface.ORIENTATION_ROTATE_180 -> 180
-                    ExifInterface.ORIENTATION_ROTATE_270 -> 270
-                    else -> 0
+                val rotationDegrees = exif.rotationDegrees
+                if (rotationDegrees != 0) {
+                    rotationDegrees
+                } else {
+                    when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                        ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                        ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                        ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                        else -> 0
+                    }
                 }
             } ?: 0
         } catch (e: Exception) {
@@ -172,72 +175,95 @@ object ImageFilterUtils {
         cropRectNormalized: RectF?,
         filterType: FilterType
     ): Uri? = withContext(Dispatchers.IO) {
+        var sourceBitmap: Bitmap? = null
+        var finalBitmap: Bitmap? = null
         try {
-            // 1. Decode full quality bitmap
-            val inputStream = context.contentResolver.openInputStream(originalUri) ?: return@withContext null
+            // 1. Decode source bitmap with full resolution
             val options = BitmapFactory.Options().apply {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
-            var sourceBitmap = BitmapFactory.decodeStream(inputStream, null, options)
-            inputStream.close()
-            if (sourceBitmap == null) return@withContext null
+            sourceBitmap = context.contentResolver.openInputStream(originalUri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, options)
+            } ?: return@withContext null
 
-            // Correct EXIF orientation first if present
+            // 2. Compute combined orientation and user rotation
             val exifOrientation = getExifOrientation(context, originalUri)
-            if (exifOrientation != 0) {
-                val matrix = Matrix().apply { postRotate(exifOrientation.toFloat()) }
-                val rotated = Bitmap.createBitmap(sourceBitmap, 0, 0, sourceBitmap.width, sourceBitmap.height, matrix, true)
-                if (rotated != sourceBitmap) {
-                    sourceBitmap.recycle()
-                    sourceBitmap = rotated
-                }
+            val totalRotation = (((exifOrientation + rotationAngle) % 360f) + 360f) % 360f
+
+            val rawWidth = sourceBitmap.width
+            val rawHeight = sourceBitmap.height
+
+            // Calculate bounding box after total rotation
+            val rotBounds = RectF(0f, 0f, rawWidth.toFloat(), rawHeight.toFloat())
+            if (totalRotation != 0f) {
+                val rotMatrix = Matrix().apply { postRotate(totalRotation) }
+                rotMatrix.mapRect(rotBounds)
             }
 
-            // 2. Apply Rotation if specified (applied before crop so normalized crop coords match the oriented image)
-            val normalizedRotation = ((rotationAngle % 360) + 360) % 360
-            if (normalizedRotation != 0f) {
-                val matrix = Matrix().apply { postRotate(normalizedRotation) }
-                val rotated = Bitmap.createBitmap(sourceBitmap, 0, 0, sourceBitmap.width, sourceBitmap.height, matrix, true)
-                if (rotated != sourceBitmap) {
-                    sourceBitmap.recycle()
-                    sourceBitmap = rotated
-                }
+            val totalRotatedWidth = rotBounds.width().roundToInt().coerceAtLeast(1)
+            val totalRotatedHeight = rotBounds.height().roundToInt().coerceAtLeast(1)
+
+            // Determine crop boundaries in rotated coordinates
+            val isCropValid = cropRectNormalized != null &&
+                    (cropRectNormalized.left > 0.0001f || cropRectNormalized.top > 0.0001f ||
+                     cropRectNormalized.right < 0.9999f || cropRectNormalized.bottom < 0.9999f)
+
+            val cropLeft: Int
+            val cropTop: Int
+            val cropWidth: Int
+            val cropHeight: Int
+
+            if (isCropValid) {
+                val crop = cropRectNormalized!!
+                val l = (crop.left.coerceIn(0f, 1f) * totalRotatedWidth).roundToInt()
+                val t = (cropRectNormalized.top.coerceIn(0f, 1f) * totalRotatedHeight).roundToInt()
+                val r = (cropRectNormalized.right.coerceIn(0f, 1f) * totalRotatedWidth).roundToInt()
+                val b = (cropRectNormalized.bottom.coerceIn(0f, 1f) * totalRotatedHeight).roundToInt()
+
+                cropLeft = l.coerceIn(0, totalRotatedWidth - 1)
+                cropTop = t.coerceIn(0, totalRotatedHeight - 1)
+                cropWidth = (r - cropLeft).coerceIn(1, totalRotatedWidth - cropLeft)
+                cropHeight = (b - cropTop).coerceIn(1, totalRotatedHeight - cropTop)
+            } else {
+                cropLeft = 0
+                cropTop = 0
+                cropWidth = totalRotatedWidth
+                cropHeight = totalRotatedHeight
             }
 
-            // 3. Apply Crop if specified
-            if (cropRectNormalized != null) {
-                val left = (cropRectNormalized.left.coerceIn(0f, 1f) * sourceBitmap.width).toInt()
-                val top = (cropRectNormalized.top.coerceIn(0f, 1f) * sourceBitmap.height).toInt()
-                val right = (cropRectNormalized.right.coerceIn(0f, 1f) * sourceBitmap.width).toInt()
-                val bottom = (cropRectNormalized.bottom.coerceIn(0f, 1f) * sourceBitmap.height).toInt()
-
-                val cropWidth = (right - left).coerceAtLeast(1).coerceAtMost(sourceBitmap.width - left)
-                val cropHeight = (bottom - top).coerceAtLeast(1).coerceAtMost(sourceBitmap.height - top)
-
-                val cropped = Bitmap.createBitmap(sourceBitmap, left, top, cropWidth, cropHeight)
-                if (cropped != sourceBitmap) {
-                    sourceBitmap.recycle()
-                    sourceBitmap = cropped
-                }
-            }
-
-            // 4. Apply Filter if specified
             val androidColorMatrix = filterType.getAndroidColorMatrix()
-            var finalBitmap = sourceBitmap
-            if (androidColorMatrix != null) {
-                val filtered = Bitmap.createBitmap(sourceBitmap.width, sourceBitmap.height, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(filtered)
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
-                    colorFilter = AndroidColorMatrixColorFilter(androidColorMatrix)
+            val needsTransform = totalRotation != 0f || isCropValid || androidColorMatrix != null
+
+            if (!needsTransform) {
+                // Direct pass-through without any intermediate allocations
+                finalBitmap = sourceBitmap
+                sourceBitmap = null
+            } else {
+                // 3. Single-pass unified transformation pipeline: Rotation + Translation + Crop + ColorMatrix
+                val destBitmap = Bitmap.createBitmap(cropWidth, cropHeight, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(destBitmap)
+
+                val transformMatrix = Matrix().apply {
+                    if (totalRotation != 0f) {
+                        postRotate(totalRotation)
+                    }
+                    postTranslate(-rotBounds.left - cropLeft, -rotBounds.top - cropTop)
                 }
-                canvas.drawBitmap(sourceBitmap, 0f, 0f, paint)
-                if (sourceBitmap != filtered) {
-                    sourceBitmap.recycle()
+
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
+                if (androidColorMatrix != null) {
+                    paint.colorFilter = AndroidColorMatrixColorFilter(androidColorMatrix)
                 }
-                finalBitmap = filtered
+
+                canvas.drawBitmap(sourceBitmap, transformMatrix, paint)
+
+                // Immediately recycle sourceBitmap to free memory before compression
+                sourceBitmap.recycle()
+                sourceBitmap = null
+                finalBitmap = destBitmap
             }
 
-            // 5. Save to MediaStore
+            // 4. Save to MediaStore
             val baseName = originalName.substringBeforeLast(".")
             val newFileName = "${baseName}_edited_${System.currentTimeMillis()}.jpg"
 
@@ -264,11 +290,17 @@ object ImageFilterUtils {
                 }
             }
 
-            finalBitmap.recycle()
             resultUri
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        } finally {
+            try {
+                sourceBitmap?.recycle()
+            } catch (_: Exception) {}
+            try {
+                finalBitmap?.recycle()
+            } catch (_: Exception) {}
         }
     }
 }

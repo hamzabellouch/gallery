@@ -172,6 +172,9 @@ fun NavGraph(
                         onOpenDrawer = {
                             scope.launch { drawerState.open() }
                         },
+                        onAddFavorites = { uris ->
+                            favoritesManager.addFavorites(uris)
+                        },
                         sharedTransitionScope = this@SharedTransitionLayout,
                         animatedVisibilityScope = this@composable
                     )
@@ -219,6 +222,9 @@ fun NavGraph(
                         },
                         onOpenDrawer = {
                             scope.launch { drawerState.open() }
+                        },
+                        onAddFavorites = { uris ->
+                            favoritesManager.addFavorites(uris)
                         },
                         sharedTransitionScope = this@SharedTransitionLayout,
                         animatedVisibilityScope = this@composable

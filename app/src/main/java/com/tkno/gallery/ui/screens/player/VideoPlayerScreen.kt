@@ -37,6 +37,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -301,12 +302,12 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Progress ticker: 60 FPS smooth updates (16ms) when controls are visible
+    // Progress ticker: Smooth updates without UI thread thrashing
     LaunchedEffect(isPlaying, showControls) {
         while (isPlaying) {
             currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
             durationMs = exoPlayer.duration.coerceAtLeast(0L)
-            delay(if (showControls) 16L else 500L)
+            delay(if (showControls) 100L else 500L)
         }
     }
 
@@ -329,10 +330,12 @@ fun VideoPlayerScreen(
         }
     }
 
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(if (isDark) Color.Black else MaterialTheme.colorScheme.background)
     ) {
         PlayerGestureController(
             onSingleTap = {
@@ -357,27 +360,14 @@ fun VideoPlayerScreen(
                         useController = false
                         keepScreenOn = true
                         setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-                        setShutterBackgroundColor(android.graphics.Color.BLACK)
+                        setShutterBackgroundColor(if (isDark) android.graphics.Color.BLACK else android.graphics.Color.TRANSPARENT)
                         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                         setOnTouchListener { _, _ -> false }
 
-                        // Enforce Hardware Composer SurfaceView Overlay & Auto Refresh Rate Matching for Android 12/13 (Zero Judder)
                         val videoSurface = videoSurfaceView
                         if (videoSurface is SurfaceView) {
                             videoSurface.holder.setKeepScreenOn(true)
                             videoSurface.setZOrderOnTop(false)
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                try {
-                                    val surface = videoSurface.holder.surface
-                                    val setFrameRateMethod = surface?.javaClass?.getMethod(
-                                        "setFrameRate",
-                                        Float::class.javaPrimitiveType,
-                                        Int::class.javaPrimitiveType
-                                    )
-                                    val targetFps = if (videoFps > 0f) videoFps else 0f
-                                    setFrameRateMethod?.invoke(surface, targetFps, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE)
-                                } catch (_: Throwable) {}
-                            }
                         }
                     }
                 },
@@ -390,7 +380,7 @@ fun VideoPlayerScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black)
+                    .background(if (isDark) Color.Black else MaterialTheme.colorScheme.background)
             )
         }
 
@@ -413,14 +403,14 @@ fun VideoPlayerScreen(
                 Text(
                     text = "Unable to play video",
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
+                    color = if (isDark) Color.White else MaterialTheme.colorScheme.onBackground,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = err,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.7f)
+                    color = (if (isDark) Color.White else MaterialTheme.colorScheme.onBackground).copy(alpha = 0.7f)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
@@ -453,74 +443,182 @@ fun VideoPlayerScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    if (onPreviousClick != null) {
-                        IconButton(onClick = { onPreviousClick() }) {
+                    if (isDark) {
+                        // Original Dark Mode: Clean White Icons on Pure Black background
+                        if (onPreviousClick != null) {
+                            IconButton(onClick = { onPreviousClick() }) {
+                                Icon(
+                                    imageVector = CustomIcons.SkipPrevious,
+                                    contentDescription = "Previous Video",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+                        }
+
+                        IconButton(onClick = {
+                            exoPlayer.seekTo((exoPlayer.currentPosition - 10000).coerceAtLeast(0))
+                        }) {
                             Icon(
-                                imageVector = CustomIcons.SkipPrevious,
-                                contentDescription = "Previous Video",
+                                imageVector = CustomIcons.Replay10,
+                                contentDescription = "-10s",
                                 tint = Color.White,
                                 modifier = Modifier.size(36.dp)
                             )
                         }
-                    }
 
-                    IconButton(onClick = {
-                        exoPlayer.seekTo((exoPlayer.currentPosition - 10000).coerceAtLeast(0))
-                    }) {
-                        Icon(
-                            imageVector = CustomIcons.Replay10,
-                            contentDescription = "-10s",
-                            tint = Color.White,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            if (exoPlayer.isPlaying) {
-                                exoPlayer.pause()
-                            } else {
-                                // If video ended, seek back to start before playing
-                                if (exoPlayer.playbackState == Player.STATE_ENDED) {
-                                    exoPlayer.seekTo(0)
+                        IconButton(
+                            onClick = {
+                                if (exoPlayer.isPlaying) {
+                                    exoPlayer.pause()
+                                } else {
+                                    // If video ended, seek back to start before playing
+                                    if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                                        exoPlayer.seekTo(0)
+                                    }
+                                    exoPlayer.play()
                                 }
-                                exoPlayer.play()
-                            }
-                        },
-                        modifier = Modifier.size(64.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isPlaying) CustomIcons.Pause else CustomIcons.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = Color.White,
-                            modifier = Modifier.size(52.dp)
-                        )
-                    }
-
-                    IconButton(onClick = {
-                        exoPlayer.seekTo((exoPlayer.currentPosition + 10000).coerceAtMost(exoPlayer.duration))
-                    }) {
-                        Icon(
-                            imageVector = CustomIcons.Forward10,
-                            contentDescription = "+10s",
-                            tint = Color.White,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-
-                    if (onNextClick != null) {
-                        IconButton(onClick = { onNextClick() }) {
+                            },
+                            modifier = Modifier.size(64.dp)
+                        ) {
                             Icon(
-                                imageVector = CustomIcons.SkipNext,
-                                contentDescription = "Next Video",
+                                imageVector = if (isPlaying) CustomIcons.Pause else CustomIcons.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                tint = Color.White,
+                                modifier = Modifier.size(52.dp)
+                            )
+                        }
+
+                        IconButton(onClick = {
+                            exoPlayer.seekTo((exoPlayer.currentPosition + 10000).coerceAtMost(exoPlayer.duration))
+                        }) {
+                            Icon(
+                                imageVector = CustomIcons.Forward10,
+                                contentDescription = "+10s",
                                 tint = Color.White,
                                 modifier = Modifier.size(36.dp)
                             )
+                        }
+
+                        if (onNextClick != null) {
+                            IconButton(onClick = { onNextClick() }) {
+                                Icon(
+                                    imageVector = CustomIcons.SkipNext,
+                                    contentDescription = "Next Video",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        // Light Mode: Clear translucent pills for contrast against light frames
+                        if (onPreviousClick != null) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.background.copy(alpha = 0.75f),
+                                shadowElevation = 4.dp,
+                                modifier = Modifier.size(46.dp)
+                            ) {
+                                IconButton(onClick = { onPreviousClick() }) {
+                                    Icon(
+                                        imageVector = CustomIcons.SkipPrevious,
+                                        contentDescription = "Previous Video",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.background.copy(alpha = 0.75f),
+                            shadowElevation = 4.dp,
+                            modifier = Modifier.size(46.dp)
+                        ) {
+                            IconButton(onClick = {
+                                exoPlayer.seekTo((exoPlayer.currentPosition - 10000).coerceAtLeast(0))
+                            }) {
+                                Icon(
+                                    imageVector = CustomIcons.Replay10,
+                                    contentDescription = "-10s",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.background.copy(alpha = 0.75f),
+                            shadowElevation = 6.dp,
+                            modifier = Modifier.size(68.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    if (exoPlayer.isPlaying) {
+                                        exoPlayer.pause()
+                                    } else {
+                                        // If video ended, seek back to start before playing
+                                        if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                                            exoPlayer.seekTo(0)
+                                        }
+                                        exoPlayer.play()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlaying) CustomIcons.Pause else CustomIcons.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(44.dp)
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.background.copy(alpha = 0.75f),
+                            shadowElevation = 4.dp,
+                            modifier = Modifier.size(46.dp)
+                        ) {
+                            IconButton(onClick = {
+                                exoPlayer.seekTo((exoPlayer.currentPosition + 10000).coerceAtMost(exoPlayer.duration))
+                            }) {
+                                Icon(
+                                    imageVector = CustomIcons.Forward10,
+                                    contentDescription = "+10s",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+
+                        if (onNextClick != null) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.background.copy(alpha = 0.75f),
+                                shadowElevation = 4.dp,
+                                modifier = Modifier.size(46.dp)
+                            ) {
+                                IconButton(onClick = { onNextClick() }) {
+                                    Icon(
+                                        imageVector = CustomIcons.SkipNext,
+                                        contentDescription = "Next Video",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
 
                 // Bottom Progress Bar & Time Display
+                val timeTextColor = if (isDark) Color.White else MaterialTheme.colorScheme.onBackground
+                val inactiveTrackColor = (if (isDark) Color.White else MaterialTheme.colorScheme.onBackground).copy(alpha = 0.35f)
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -534,8 +632,9 @@ fun VideoPlayerScreen(
                     ) {
                         Text(
                             text = "${FormatUtils.formatDuration(currentPositionMs)} / ${FormatUtils.formatDuration(durationMs)}",
-                            color = Color.White,
-                            fontSize = 12.sp
+                            color = timeTextColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
                         )
                         Row(
                             verticalAlignment = Alignment.CenterVertically
@@ -555,7 +654,7 @@ fun VideoPlayerScreen(
                             ) {
                                 Text(
                                     text = "${playbackSpeed}x",
-                                    color = Color.White,
+                                    color = timeTextColor,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp
                                 )
@@ -570,7 +669,7 @@ fun VideoPlayerScreen(
                                 Icon(
                                     imageVector = CustomIcons.Repeat,
                                     contentDescription = "Loop Video",
-                                    tint = if (isLooping) primaryAccent else Color.White,
+                                    tint = if (isLooping) primaryAccent else timeTextColor,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
@@ -584,14 +683,13 @@ fun VideoPlayerScreen(
                                     Icon(
                                         imageVector = CustomIcons.PictureInPicture,
                                         contentDescription = "Picture in Picture",
-                                        tint = Color.White,
+                                        tint = timeTextColor,
                                         modifier = Modifier.size(22.dp)
                                     )
                                 }
                             }
                         }
                     }
-
 
                     Slider(
                         value = if (durationMs > 0) currentPositionMs.toFloat() / durationMs.toFloat() else 0f,
@@ -610,7 +708,7 @@ fun VideoPlayerScreen(
                         colors = SliderDefaults.colors(
                             thumbColor = primaryAccent,
                             activeTrackColor = primaryAccent,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                            inactiveTrackColor = inactiveTrackColor
                         )
                     )
                 }

@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -272,10 +273,12 @@ fun ShortsPlayerScreen(
         context.startActivity(Intent.createChooser(shareIntent, "Share Video"))
     }
 
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(if (isDark) Color.Black else MaterialTheme.colorScheme.background)
     ) {
         VerticalPager(
             state = pagerState,
@@ -302,8 +305,10 @@ fun ShortsPlayerScreen(
         if (!isInPipMode) {
             Surface(
                 shape = CircleShape,
-                color = Color.Black.copy(alpha = 0.45f),
-                contentColor = Color.White,
+                color = if (isDark) Color.Black.copy(alpha = 0.45f) else MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+                contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
+                tonalElevation = 0.dp,
+                shadowElevation = if (isDark) 0.dp else 6.dp,
                 modifier = Modifier
                     .statusBarsPadding()
                     .padding(start = 16.dp, top = 8.dp)
@@ -317,7 +322,7 @@ fun ShortsPlayerScreen(
                     Icon(
                         imageVector = CustomIcons.ChevronLeft,
                         contentDescription = "Back",
-                        tint = Color.White,
+                        tint = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -337,6 +342,7 @@ private fun ShortsVideoPageItem(
     onDeleteClick: () -> Unit,
     onShareClick: () -> Unit
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val primaryAccent = MaterialTheme.colorScheme.primary
@@ -470,7 +476,7 @@ private fun ShortsVideoPageItem(
             while (isPlaying) {
                 currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
                 durationMs = exoPlayer.duration.coerceAtLeast(0L)
-                delay(16L)
+                delay(100L)
             }
         }
     }
@@ -478,7 +484,7 @@ private fun ShortsVideoPageItem(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(if (isDark) Color.Black else MaterialTheme.colorScheme.background)
             .pointerInput(exoPlayer, item.isFavorite) {
                 detectTapGestures(
                     onDoubleTap = {
@@ -512,7 +518,7 @@ private fun ShortsVideoPageItem(
                         useController = false
                         keepScreenOn = true
                         setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-                        setShutterBackgroundColor(android.graphics.Color.BLACK)
+                        setShutterBackgroundColor(if (isDark) android.graphics.Color.BLACK else android.graphics.Color.TRANSPARENT)
                         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                         setOnTouchListener { _, _ -> false }
 
@@ -520,18 +526,6 @@ private fun ShortsVideoPageItem(
                         if (videoSurface is SurfaceView) {
                             videoSurface.holder.setKeepScreenOn(true)
                             videoSurface.setZOrderOnTop(false)
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                try {
-                                    val surface = videoSurface.holder.surface
-                                    val setFrameRateMethod = surface?.javaClass?.getMethod(
-                                        "setFrameRate",
-                                        Float::class.javaPrimitiveType,
-                                        Int::class.javaPrimitiveType
-                                    )
-                                    val targetFps = if (videoFps > 0f) videoFps else 0f
-                                    setFrameRateMethod?.invoke(surface, targetFps, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE)
-                                } catch (_: Throwable) {}
-                            }
                         }
                     }
                 },
@@ -544,7 +538,7 @@ private fun ShortsVideoPageItem(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black)
+                    .background(if (isDark) Color.Black else MaterialTheme.colorScheme.background)
             )
         }
 
@@ -565,14 +559,15 @@ private fun ShortsVideoPageItem(
         ) {
             Surface(
                 shape = CircleShape,
-                color = Color.Black.copy(alpha = 0.5f),
+                color = if (isDark) Color.Black.copy(alpha = 0.5f) else MaterialTheme.colorScheme.background.copy(alpha = 0.75f),
+                shadowElevation = if (isDark) 0.dp else 4.dp,
                 modifier = Modifier.size(72.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = if (isPlaying) CustomIcons.Pause else CustomIcons.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
-                        tint = Color.White,
+                        tint = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(44.dp)
                     )
                 }
@@ -612,7 +607,10 @@ private fun ShortsVideoPageItem(
                     .align(Alignment.BottomCenter)
                     .background(
                         Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
+                            colors = listOf(
+                                Color.Transparent,
+                                if (isDark) Color.Black.copy(alpha = 0.75f) else MaterialTheme.colorScheme.background.copy(alpha = 0.75f)
+                            )
                         )
                     )
             )
@@ -620,6 +618,8 @@ private fun ShortsVideoPageItem(
 
         // Right-Side TikTok Action Column
         if (!isInPipMode) {
+            val actionButtonTint = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -632,7 +632,7 @@ private fun ShortsVideoPageItem(
                 TikTokActionButton(
                     icon = if (item.isFavorite) Icons.Filled.Favorite else CustomIcons.Favorite,
                     label = "Favorite",
-                    tint = if (item.isFavorite) Color(0xFFFF2B54) else Color.White,
+                    tint = if (item.isFavorite) Color(0xFFFF2B54) else actionButtonTint,
                     onClick = onToggleFavorite
                 )
 
@@ -640,7 +640,7 @@ private fun ShortsVideoPageItem(
                 TikTokActionButton(
                     icon = CustomIcons.Edit,
                     label = "Edit",
-                    tint = Color.White,
+                    tint = actionButtonTint,
                     onClick = onEditClick
                 )
 
@@ -648,7 +648,7 @@ private fun ShortsVideoPageItem(
                 TikTokActionButton(
                     icon = CustomIcons.Delete,
                     label = "Trash",
-                    tint = Color.White,
+                    tint = actionButtonTint,
                     onClick = onDeleteClick
                 )
 
@@ -656,7 +656,7 @@ private fun ShortsVideoPageItem(
                 TikTokActionButton(
                     icon = CustomIcons.Share,
                     label = "Share",
-                    tint = Color.White,
+                    tint = actionButtonTint,
                     onClick = onShareClick
                 )
 
@@ -664,7 +664,7 @@ private fun ShortsVideoPageItem(
                 TikTokActionButton(
                     icon = CustomIcons.MoreHoriz,
                     label = "More",
-                    tint = Color.White,
+                    tint = actionButtonTint,
                     onClick = { showMorePopup = true }
                 )
             }
@@ -672,6 +672,9 @@ private fun ShortsVideoPageItem(
 
         // Bottom Controls: Time & Progress Bar (clean & lowered to bottom edge)
         if (!isInPipMode) {
+            val bottomTimeColor = if (isDark) Color.White else MaterialTheme.colorScheme.onBackground
+            val inactiveTrackColor = (if (isDark) Color.White else MaterialTheme.colorScheme.onBackground).copy(alpha = 0.35f)
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -682,7 +685,7 @@ private fun ShortsVideoPageItem(
                 // Time Display
                 Text(
                     text = "${FormatUtils.formatDuration(currentPositionMs)} / ${FormatUtils.formatDuration(durationMs)}",
-                    color = Color.White,
+                    color = bottomTimeColor,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
@@ -706,7 +709,7 @@ private fun ShortsVideoPageItem(
                     colors = SliderDefaults.colors(
                         thumbColor = primaryAccent,
                         activeTrackColor = primaryAccent,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.35f)
+                        inactiveTrackColor = inactiveTrackColor
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -736,7 +739,7 @@ private fun ShortsVideoPageItem(
                     contentAlignment = Alignment.BottomCenter
                 ) {
                     Surface(
-                        color = Color.Black.copy(alpha = 0.5f),
+                        color = if (isDark) Color.Black.copy(alpha = 0.5f) else MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
                         shape = RoundedCornerShape(28.dp),
                         shadowElevation = 8.dp,
                         tonalElevation = 0.dp,
@@ -757,6 +760,8 @@ private fun ShortsVideoPageItem(
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            val moreItemTint = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+
                             // 1. Playback Speed
                             MorePopupItem(
                                 icon = null,
@@ -777,7 +782,7 @@ private fun ShortsVideoPageItem(
                             // 2. Loop / Replay
                             MorePopupItem(
                                 icon = CustomIcons.Repeat,
-                                tint = if (isLooping) primaryAccent else Color.White,
+                                tint = if (isLooping) primaryAccent else moreItemTint,
                                 label = "Loop",
                                 onClick = { isLooping = !isLooping }
                             )
@@ -818,7 +823,7 @@ private fun ShortsVideoPageItem(
                             val isLandscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
                             MorePopupItem(
                                 icon = CustomIcons.MobileRotate,
-                                tint = if (isLandscape) primaryAccent else Color.White,
+                                tint = if (isLandscape) primaryAccent else moreItemTint,
                                 label = "Rotate",
                                 onClick = {
                                     val act = context.findActivity() ?: return@MorePopupItem
@@ -842,9 +847,14 @@ private fun MorePopupItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector?,
     customBadgeText: String? = null,
     label: String,
-    tint: Color = Color.White,
+    tint: Color = Color.Unspecified,
     onClick: () -> Unit
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val effectiveTint = if (tint == Color.Unspecified) {
+        if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+    } else tint
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -855,7 +865,7 @@ private fun MorePopupItem(
     ) {
         Surface(
             shape = CircleShape,
-            color = Color.White.copy(alpha = 0.12f),
+            color = if (isDark) Color.White.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.size(46.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -863,13 +873,13 @@ private fun MorePopupItem(
                     Icon(
                         imageVector = icon,
                         contentDescription = label,
-                        tint = tint,
+                        tint = effectiveTint,
                         modifier = Modifier.size(24.dp)
                     )
                 } else if (customBadgeText != null) {
                     Text(
                         text = customBadgeText,
-                        color = Color.White,
+                        color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     )
@@ -879,7 +889,7 @@ private fun MorePopupItem(
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = label,
-            color = Color.White.copy(alpha = 0.9f),
+            color = if (isDark) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.onSurface,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             style = MaterialTheme.typography.labelSmall
@@ -895,6 +905,8 @@ private fun TikTokActionButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -905,7 +917,9 @@ private fun TikTokActionButton(
     ) {
         Surface(
             shape = CircleShape,
-            color = Color.Black.copy(alpha = 0.45f),
+            color = if (isDark) Color.Black.copy(alpha = 0.45f) else MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
+            contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
+            shadowElevation = if (isDark) 0.dp else 4.dp,
             modifier = Modifier.size(44.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -920,7 +934,7 @@ private fun TikTokActionButton(
         Spacer(modifier = Modifier.height(3.dp))
         Text(
             text = label,
-            color = Color.White,
+            color = if (isDark) Color.White else MaterialTheme.colorScheme.onBackground,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             style = MaterialTheme.typography.labelSmall

@@ -50,12 +50,10 @@ class MainActivity : ComponentActivity() {
 
                     PermissionHandler(bypassPermission = isMediaIntent) {
                         val mediaItems by repository.getMediaItemsFlow().collectAsState(initial = emptyList())
-                        var albums by remember { mutableStateOf<List<Album>>(emptyList()) }
-
-                        LaunchedEffect(mediaItems) {
+                        val albums = remember(mediaItems) {
                             if (mediaItems.isNotEmpty()) {
-                                albums = repository.getAlbums()
-                            }
+                                repository.getAlbumsFromMediaList(mediaItems)
+                            } else emptyList()
                         }
 
                         val navController = rememberNavController()

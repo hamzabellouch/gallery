@@ -3,9 +3,8 @@ package com.tkno.gallery.util
 import android.app.ActivityManager
 import android.content.ComponentCallbacks2
 import android.content.Context
-import android.os.Build
 import android.util.Log
-import coil3.ImageLoader
+import coil3.SingletonImageLoader
 import coil3.memory.MemoryCache
 
 data class MemoryProfile(
@@ -28,11 +27,9 @@ object MemoryManager {
     private var cachedProfile: MemoryProfile? = null
 
     /**
-     * Resolves the Device RAM Tier and configured Memory Limits:
-     * - 1 GB RAM -> 200 MB App Limit
-     * - 2 GB RAM -> 500 MB App Limit
-     * - 3 GB RAM -> 800 MB App Limit
-     * - 4 GB+ RAM -> 1024 MB (1 GB) App Limit
+     * Resolves the Device RAM Tier and JVM heap-safe configured Memory Limits:
+     * Calculates Coil memory cache size based on JVM Heap max ceiling Runtime.getRuntime().maxMemory()
+     * (25% of available JVM heap) rather than device total RAM, to completely prevent OutOfMemoryError.
      */
     fun getMemoryProfile(context: Context): MemoryProfile {
         cachedProfile?.let { return it }
@@ -48,8 +45,10 @@ object MemoryManager {
         }
 
         val maxAppBytes = maxAppLimitMb * MB
-        // Allocate 50% of the target App memory limit specifically to Coil image bitmap cache
-        val imageCacheBytes = (maxAppBytes * 0.50).toLong()
+
+        // Calculate Coil memory cache based on JVM Heap max ceiling (25% of available JVM heap ceiling)
+        val jvmMaxHeap = Runtime.getRuntime().maxMemory().coerceAtLeast(32L * MB)
+        val imageCacheBytes = (jvmMaxHeap * 0.25).toLong().coerceIn(16L * MB, 128L * MB)
 
         val profile = MemoryProfile(
             totalDeviceRamBytes = totalRam,
@@ -61,7 +60,7 @@ object MemoryManager {
         )
 
         cachedProfile = profile
-        Log.i(TAG, "Initialized Memory Profile: ${profile.tierName}, Total Device RAM: ${String.format("%.2f", ramInGb)} GB, App Memory Limit: ${maxAppLimitMb} MB, Coil Cache: ${imageCacheBytes / MB} MB")
+        Log.i(TAG, "Initialized Memory Profile: ${profile.tierName}, Total Device RAM: ${String.format("%.2f", ramInGb)} GB, Max JVM Heap: ${jvmMaxHeap / MB} MB, Coil Cache: ${imageCacheBytes / MB} MB")
         return profile
     }
 
@@ -77,7 +76,7 @@ object MemoryManager {
     }
 
     /**
-     * Builds and configures the Coil ImageLoader MemoryCache according to the device RAM tier.
+     * Builds and configures the Coil ImageLoader MemoryCache according to safe JVM Heap limits.
      */
     fun configureCoilMemoryCache(context: Context): MemoryCache {
         val profile = getMemoryProfile(context)
@@ -87,19 +86,55 @@ object MemoryManager {
     }
 
     /**
-     * Handles system memory warnings to prevent OOM
+     * Handles system memory warnings to purge caches and prevent OOM
      */
     @Suppress("DEPRECATION")
-    fun onTrimMemory(level: Int) {
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
-            level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
-            Log.w(TAG, "Low memory trim level received ($level). Purging non-essential caches.")
-            System.gc()
+    fun onTrimMemory(context: Context?, level: Int) {
+        try {
+            // 1. Clear high-speed L1 bitmap cache in MediaStoreThumbnailFetcher
+            MediaStoreThumbnailFetcher.clearL1Cache()
+
+            // 2. Trim or Clear Coil Memory Cache based on trim severity
+            if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+                level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE ||
+                level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
+            ) {
+                Log.w(TAG, "Critical memory trim ($level). Purging all Coil memory caches.")
+                if (context != null) {
+                    SingletonImageLoader.get(context).memoryCache?.clear()
+                }
+                System.gc()
+            } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+                level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE ||
+                level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN
+            ) {
+                Log.d(TAG, "Moderate memory trim ($level). Trimming Coil memory cache by 50%.")
+                if (context != null) {
+                    val memoryCache = SingletonImageLoader.get(context).memoryCache
+                    if (memoryCache != null) {
+                        memoryCache.trimToSize(memoryCache.size / 2)
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error handling onTrimMemory", e)
         }
     }
 
-    fun onLowMemory() {
-        Log.w(TAG, "System onLowMemory event triggered. Performing emergency GC.")
-        System.gc()
+    fun onTrimMemory(level: Int) {
+        onTrimMemory(null, level)
+    }
+
+    fun onLowMemory(context: Context? = null) {
+        Log.w(TAG, "System onLowMemory event triggered. Performing emergency cache purge.")
+        try {
+            MediaStoreThumbnailFetcher.clearL1Cache()
+            if (context != null) {
+                SingletonImageLoader.get(context).memoryCache?.clear()
+            }
+            System.gc()
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error handling onLowMemory", e)
+        }
     }
 }
