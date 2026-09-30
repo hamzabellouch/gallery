@@ -1,6 +1,7 @@
 package com.tkno.gallery.data.model
 
 import android.net.Uri
+import androidx.compose.runtime.Immutable
 import com.tkno.gallery.R
 
 enum class ResolutionBadge(val iconResId: Int, val label: String) {
@@ -18,6 +19,7 @@ enum class ResolutionBadge(val iconResId: Int, val label: String) {
     NONE(0, "")
 }
 
+@Immutable
 data class MediaItem(
     val id: Long,
     val uri: Uri,

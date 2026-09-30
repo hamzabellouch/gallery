@@ -24,6 +24,14 @@ import java.io.File
 
 class MediaStoreRepository(private val context: Context) {
 
+    private val mediaAuthorityUri: Uri by lazy {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.AUTHORITY_URI
+        } else {
+            Uri.parse("content://" + MediaStore.AUTHORITY)
+        }
+    }
+
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     fun getTrashedMediaItemsFlow(): Flow<List<MediaItem>> = callbackFlow {
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
@@ -40,12 +48,12 @@ class MediaStoreRepository(private val context: Context) {
 
         try {
             resolver.registerContentObserver(
-                MediaStore.AUTHORITY_URI,
+                mediaAuthorityUri,
                 true,
                 observer
             )
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (t: Throwable) {
+            t.printStackTrace()
         }
 
         trySend(fetchTrashedMediaItemsSync())
@@ -53,8 +61,8 @@ class MediaStoreRepository(private val context: Context) {
         awaitClose {
             try {
                 resolver.unregisterContentObserver(observer)
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (t: Throwable) {
+                t.printStackTrace()
             }
         }
     }
@@ -117,12 +125,12 @@ class MediaStoreRepository(private val context: Context) {
 
         try {
             resolver.registerContentObserver(
-                MediaStore.AUTHORITY_URI,
+                mediaAuthorityUri,
                 true,
                 observer
             )
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (t: Throwable) {
+            t.printStackTrace()
         }
 
         try {
@@ -131,8 +139,8 @@ class MediaStoreRepository(private val context: Context) {
                 true,
                 observer
             )
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (t: Throwable) {
+            t.printStackTrace()
         }
 
         // Initial emission
@@ -141,8 +149,8 @@ class MediaStoreRepository(private val context: Context) {
         awaitClose {
             try {
                 resolver.unregisterContentObserver(observer)
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (t: Throwable) {
+                t.printStackTrace()
             }
         }
     }

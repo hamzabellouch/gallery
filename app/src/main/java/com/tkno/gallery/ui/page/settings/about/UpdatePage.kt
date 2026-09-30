@@ -113,7 +113,6 @@ fun UpdatePage(
                     Text(modifier = Modifier, text = stringResource(id = R.string.auto_update), color = MaterialTheme.colorScheme.onBackground)
                 },
                 navigationIcon = { BackButton { onNavigateBack() } },
-                windowInsets = WindowInsets(0.dp),
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.background,

@@ -96,7 +96,6 @@
     <string name="issue_tracker">متتبع المشاكل</string>
     <string name="issue_tracker_hint">هل واجهت خطأً؟ قبل الإبلاغ عن مشكلة جديدة، يرجى البحث في متتبع المشاكل الخاص بنا. تم توثيق وإصلاح العديد من المشاكل الشائعة هناك.</string>
     <string name="menu">القائمة</string>
-    <string name="menu_options_listed_count">%1$d خيارات في القائمة</string>
     <string name="scan">مسح</string>
     <string name="contact">الاتصال</string>
     <string name="contact_desc">تواصل مع المطور لإضافة ميزات جديدة في إيبكس</string>
@@ -108,6 +107,7 @@
     <string name="github_stars_desc">دعم هذا التطبيق بإضافة نجمة على GitHub</string>
     <string name="package_name">اسم الحزمة</string>
     <string name="privacy_policy">سياسة الخصوصية</string>
+    <string name="privacy_policy_desc">قراءة سياسة الخصوصية والشروط الخاصة بنا</string>
     <string name="done">تم</string>
     <string name="downloading">جاري التنزيل...</string>
     <string name="downloaded_successfully">تم التنزيل بنجاح</string>
@@ -281,4 +281,21 @@
     <string name="onboarding_page3_desc">تم تكوين كل شيء بنجاح والتطبيق الآن جاهز للعمل. نتمنى لك استخدامًا ممتعًا.</string>
     <string name="new_update_available">تحديث جديد متاح</string>
     <string name="new_update_desc">إصدار جديد (%1$s) متوفر الآن. انقر للتحميل والتثبيت.</string>
+    <string name="whats_new">ما الجديد</string>
+    <string name="interface_and_interaction">الواجهة والتفاعل</string>
+    <string name="interface_and_interaction_desc">تخصيص أشرطة التحكم والتنقل في عارض الوسائط</string>
+    <string name="classic_viewer_bar">شريط مهام الوسائط الكلاسيكي</string>
+    <string name="classic_viewer_bar_desc">استخدام الشريط القديم الممتد بعرض الشاشة في عارض الصور والفيديوهات بدلاً من الكبسولة العائمة</string>
+    <string name="use_classic_taskbar">شريط المهام الكلاسيكي</string>
+    <string name="use_classic_taskbar_desc">استخدام شريط التنقل السفلي الكلاسيكي بدلاً من الكبسولة العائمة</string>
+    <string name="show_resolution_badges">إظهار شارات الدقة</string>
+    <string name="show_resolution_badges_desc">عرض أيقونات الدقة (مثل 4K و Full HD) على بطاقات الصور والفيديوهات</string>
+    <string name="card_rounded_corners">حواف البطاقات المنحنية</string>
+    <string name="card_rounded_corners_desc">تطبيق حواف دائرية منحنية على بطاقات الصور والفيديوهات في المعرض</string>
+    <string name="whatsapp">واتساب</string>
+    <string name="whatsapp_desc">تابع المطور على واتساب لمزيد من التحديثات</string>
+    <string name="problem_report">إبلاغ عن مشكلة</string>
+    <string name="problem_report_dialog_desc">إذا واجهتكم مشكلة، المرجو ملء هذه الاستمارة، لن تتجاوز المدة تقريباً 20 ثانية.</string>
+    <string name="open_report_form">إبلاغ</string>
+    <string name="star">Star</string>
 </resources>

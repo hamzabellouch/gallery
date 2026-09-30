@@ -34,6 +34,7 @@ import androidx.core.content.ContextCompat
 
 @Composable
 fun PermissionHandler(
+    bypassPermission: Boolean = false,
     onPermissionsGranted: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -63,7 +64,7 @@ fun PermissionHandler(
         hasPermission = permissionsResult.values.all { it }
     }
 
-    if (hasPermission) {
+    if (hasPermission || bypassPermission) {
         onPermissionsGranted()
     } else {
         PermissionScreenContent(

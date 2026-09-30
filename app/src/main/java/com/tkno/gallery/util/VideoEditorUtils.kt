@@ -3,6 +3,7 @@ package com.tkno.gallery.util
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.RectF
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -12,12 +13,27 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.annotation.OptIn
+import androidx.media3.common.Effect
+import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Crop
+import androidx.media3.effect.ScaleAndRotateTransformation
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Effects
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.Transformer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.nio.ByteBuffer
+import kotlin.coroutines.resume
 
+@OptIn(UnstableApi::class)
 object VideoEditorUtils {
 
     suspend fun extractVideoThumbnails(
@@ -63,9 +79,7 @@ object VideoEditorUtils {
         } finally {
             try {
                 retriever.release()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (_: Exception) {}
         }
         bitmaps
     }
@@ -76,14 +90,137 @@ object VideoEditorUtils {
         originalName: String,
         startMs: Long,
         endMs: Long,
-        rotationAngle: Float = 0f
+        rotationAngle: Float = 0f,
+        cropRectNormalized: RectF? = null
     ): Uri? = withContext(Dispatchers.IO) {
+        val normalizedAngle = ((rotationAngle % 360f) + 360f) % 360f
+
+        // If cropped or rotated, use Media3 Transformer with GPU effects
+        if (cropRectNormalized != null || normalizedAngle != 0f) {
+            val transformedUri = transformVideoWithMedia3(
+                context = context,
+                sourceUri = sourceUri,
+                originalName = originalName,
+                startMs = startMs,
+                endMs = endMs,
+                rotationAngle = normalizedAngle,
+                cropRect = cropRectNormalized
+            )
+            if (transformedUri != null) return@withContext transformedUri
+        }
+
+        // Fast path for trim only (stream copy without re-encoding)
+        return@withContext trimVideoWithMuxer(
+            context = context,
+            sourceUri = sourceUri,
+            originalName = originalName,
+            startMs = startMs,
+            endMs = endMs,
+            rotationAngle = normalizedAngle
+        )
+    }
+
+    private suspend fun transformVideoWithMedia3(
+        context: Context,
+        sourceUri: Uri,
+        originalName: String,
+        startMs: Long,
+        endMs: Long,
+        rotationAngle: Float,
+        cropRect: RectF?
+    ): Uri? {
+        val tempOutputFile = File(context.cacheDir, "transformed_${System.currentTimeMillis()}.mp4")
+        try {
+            val clippingBuilder = MediaItem.ClippingConfiguration.Builder()
+            if (startMs > 0L) {
+                clippingBuilder.setStartPositionMs(startMs)
+            }
+            if (endMs > startMs) {
+                clippingBuilder.setEndPositionMs(endMs)
+            }
+
+            val mediaItem = MediaItem.Builder()
+                .setUri(sourceUri)
+                .setClippingConfiguration(clippingBuilder.build())
+                .build()
+
+            val effectsList = mutableListOf<Effect>()
+
+            if (rotationAngle != 0f) {
+                effectsList.add(
+                    ScaleAndRotateTransformation.Builder()
+                        .setRotationDegrees(rotationAngle)
+                        .build()
+                )
+            }
+
+            if (cropRect != null) {
+                // Media3 Crop coordinates: left [-1..1], right [-1..1], bottom [-1..1], top [-1..1]
+                val ndcLeft = (cropRect.left * 2f - 1f).coerceIn(-1f, 1f)
+                val ndcRight = (cropRect.right * 2f - 1f).coerceIn(-1f, 1f)
+                val ndcTop = (1f - cropRect.top * 2f).coerceIn(-1f, 1f)
+                val ndcBottom = (1f - cropRect.bottom * 2f).coerceIn(-1f, 1f)
+                effectsList.add(Crop(ndcLeft, ndcRight, ndcBottom, ndcTop))
+            }
+
+            val editedMediaItem = EditedMediaItem.Builder(mediaItem)
+                .setEffects(Effects(emptyList(), effectsList))
+                .build()
+
+            val success = withContext(Dispatchers.Main) {
+                suspendCancellableCoroutine<Boolean> { cont ->
+                    val transformer = Transformer.Builder(context)
+                        .addListener(object : Transformer.Listener {
+                            override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                                if (cont.isActive) cont.resume(true)
+                            }
+
+                            override fun onError(
+                                composition: Composition,
+                                exportResult: ExportResult,
+                                exportException: ExportException
+                            ) {
+                                exportException.printStackTrace()
+                                if (cont.isActive) cont.resume(false)
+                            }
+                        })
+                        .build()
+
+                    cont.invokeOnCancellation {
+                        try {
+                            transformer.cancel()
+                        } catch (_: Exception) {}
+                    }
+
+                    transformer.start(editedMediaItem, tempOutputFile.absolutePath)
+                }
+            }
+
+            if (success && tempOutputFile.exists() && tempOutputFile.length() > 0) {
+                return saveFileToMediaStore(context, tempOutputFile, originalName)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            tempOutputFile.delete()
+        }
+        return null
+    }
+
+    private fun trimVideoWithMuxer(
+        context: Context,
+        sourceUri: Uri,
+        originalName: String,
+        startMs: Long,
+        endMs: Long,
+        rotationAngle: Float
+    ): Uri? {
         var tempOutputFile: File? = null
         val extractor = MediaExtractor()
         var muxer: MediaMuxer? = null
 
         try {
-            val pfd = context.contentResolver.openFileDescriptor(sourceUri, "r") ?: return@withContext null
+            val pfd = context.contentResolver.openFileDescriptor(sourceUri, "r") ?: return null
             extractor.setDataSource(pfd.fileDescriptor)
 
             tempOutputFile = File(context.cacheDir, "trimmed_${System.currentTimeMillis()}.mp4")
@@ -113,7 +250,7 @@ object VideoEditorUtils {
 
             if (trackMap.isEmpty()) {
                 pfd.close()
-                return@withContext null
+                return null
             }
 
             // Apply orientation hint if rotated
@@ -126,7 +263,7 @@ object VideoEditorUtils {
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
-                try { retriever.release() } catch (e: Exception) {}
+                try { retriever.release() } catch (_: Exception) {}
             }
 
             val finalRotation = ((baseRotation + rotationAngle.toInt()) % 360 + 360) % 360
@@ -157,7 +294,6 @@ object VideoEditorUtils {
                 val trackIndex = extractor.sampleTrackIndex
 
                 if (bufferInfo.presentationTimeUs > endUs) {
-                    // Reached end of trimmed range
                     break
                 }
 
@@ -177,43 +313,46 @@ object VideoEditorUtils {
             extractor.release()
             pfd.close()
 
-            // Save temp file to MediaStore
-            val baseName = originalName.substringBeforeLast(".")
-            val newFileName = "${baseName}_trimmed_${System.currentTimeMillis()}.mp4"
-
-            val contentValues = ContentValues().apply {
-                put(MediaStore.Video.Media.DISPLAY_NAME, newFileName)
-                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Gallery")
-                    put(MediaStore.Video.Media.IS_PENDING, 1)
-                }
-            }
-
-            val resultUri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
-
-            if (resultUri != null && tempOutputFile.exists()) {
-                context.contentResolver.openOutputStream(resultUri)?.use { os ->
-                    FileInputStream(tempOutputFile).use { fis ->
-                        fis.copyTo(os)
-                    }
-                }
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    contentValues.clear()
-                    contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
-                    context.contentResolver.update(resultUri, contentValues, null, null)
-                }
-            }
-
-            tempOutputFile.delete()
-            resultUri
+            return saveFileToMediaStore(context, tempOutputFile, originalName)
         } catch (e: Exception) {
             e.printStackTrace()
-            try { muxer?.release() } catch (ex: Exception) {}
-            try { extractor.release() } catch (ex: Exception) {}
+            try { muxer?.release() } catch (_: Exception) {}
+            try { extractor.release() } catch (_: Exception) {}
             tempOutputFile?.delete()
-            null
+            return null
         }
+    }
+
+    private fun saveFileToMediaStore(context: Context, sourceFile: File, originalName: String): Uri? {
+        val baseName = originalName.substringBeforeLast(".")
+        val newFileName = "${baseName}_edited_${System.currentTimeMillis()}.mp4"
+
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, newFileName)
+            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Gallery")
+                put(MediaStore.Video.Media.IS_PENDING, 1)
+            }
+        }
+
+        val resultUri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+
+        if (resultUri != null && sourceFile.exists()) {
+            context.contentResolver.openOutputStream(resultUri)?.use { os ->
+                FileInputStream(sourceFile).use { fis ->
+                    fis.copyTo(os)
+                }
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentValues.clear()
+                contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
+                context.contentResolver.update(resultUri, contentValues, null, null)
+            }
+        }
+
+        sourceFile.delete()
+        return resultUri
     }
 }

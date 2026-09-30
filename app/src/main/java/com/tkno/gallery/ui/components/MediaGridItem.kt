@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -24,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -34,6 +36,7 @@ import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import coil3.size.Precision
 import com.tkno.gallery.data.model.MediaItem
 import com.tkno.gallery.data.model.ResolutionBadge
 import com.tkno.gallery.util.FormatUtils
@@ -46,6 +49,14 @@ private val overlayGradient = Brush.verticalGradient(
     )
 )
 
+private val shapeYear = RoundedCornerShape(1.dp)
+private val shapeMonth = RoundedCornerShape(3.dp)
+private val shapeDefault = RoundedCornerShape(8.dp)
+
+private val paddingYear = 0.5.dp
+private val paddingMonth = 1.dp
+private val paddingDefault = 2.dp
+
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun MediaGridItem(
@@ -55,28 +66,31 @@ fun MediaGridItem(
     columnCount: Int = 3,
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
+    showResolutionBadge: Boolean = true,
+    roundedCorners: Boolean = true,
     onLongClick: (() -> Unit)? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
     val context = LocalContext.current
-    val badge = item.resolutionBadge
+
+    val shape = if (roundedCorners) {
+        when {
+            columnCount >= 10 -> shapeYear
+            columnCount >= 7 -> shapeMonth
+            else -> shapeDefault
+        }
+    } else {
+        RectangleShape
+    }
 
     val paddingDp = when {
-        columnCount >= 10 -> 0.5.dp
-        columnCount >= 7 -> 1.dp
-        else -> 2.dp
+        columnCount >= 10 -> paddingYear
+        columnCount >= 7 -> paddingMonth
+        else -> paddingDefault
     }
 
-    val cornerRadiusDp = when {
-        columnCount >= 10 -> 1.dp
-        columnCount >= 7 -> 3.dp
-        else -> 8.dp
-    }
-
-    val shape = remember(cornerRadiusDp) { RoundedCornerShape(cornerRadiusDp) }
-
-    val placeholderColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val placeholderColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
 
     var boxModifier = modifier
         .aspectRatio(1f)
@@ -92,7 +106,9 @@ fun MediaGridItem(
         )
     }
 
-    if (sharedTransitionScope != null && animatedVisibilityScope != null && !isSelectionMode) {
+    // Crucial: Shared element transitions are only enabled in Day views (<= 4 columns)
+    // to eliminate massive layout coordinate tracking overhead across 100-200 items during Month/Year zoom scroll
+    if (columnCount <= 4 && sharedTransitionScope != null && animatedVisibilityScope != null && !isSelectionMode) {
         with(sharedTransitionScope) {
             boxModifier = boxModifier.sharedElement(
                 sharedContentState = rememberSharedContentState(key = "media_${item.id}"),
@@ -107,10 +123,19 @@ fun MediaGridItem(
         }
     }
 
-    val imageRequest = remember(item.uri, columnCount) {
+    // Adaptive thumbnail sizing mapped directly to Android hardware thumbnail cache tiers
+    val targetThumbnailPx = when {
+        columnCount >= 10 -> 96     // Android MICRO_KIND hardware thumbnail cache
+        columnCount >= 7 -> 160    // Month view
+        columnCount == 4 -> 256    // Medium view
+        else -> 384                // Large view
+    }
+
+    val imageRequest = remember(item.uri, targetThumbnailPx) {
         ImageRequest.Builder(context)
             .data(item.uri)
-            .size(if (columnCount >= 7) 180 else 256)
+            .size(targetThumbnailPx)
+            .precision(Precision.INEXACT)
             .crossfade(false)
             .memoryCachePolicy(CachePolicy.ENABLED)
             .diskCachePolicy(CachePolicy.ENABLED)
@@ -179,10 +204,12 @@ fun MediaGridItem(
             }
         }
 
-        // Only show overlays and badges on larger zoom levels (columns <= 4)
+        // Overlays and badges are only shown on larger zoom levels (columns <= 4)
         if (columnCount <= 4 && !isSelectionMode) {
+            val badge = item.resolutionBadge
+
             // Gradient overlay for text legibility
-            if (item.isVideo || badge != ResolutionBadge.NONE) {
+            if (item.isVideo || (showResolutionBadge && badge != ResolutionBadge.NONE)) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -191,7 +218,7 @@ fun MediaGridItem(
             }
 
             // Top-Right Resolution Badge (8K, 4K, 2K, Full HD, HD)
-            if (badge != ResolutionBadge.NONE) {
+            if (showResolutionBadge && badge != ResolutionBadge.NONE) {
                 Icon(
                     painter = painterResource(id = badge.iconResId),
                     contentDescription = "${badge.label} Media",
@@ -203,43 +230,60 @@ fun MediaGridItem(
                 )
             }
 
-            // Bottom Video Badge with Play icon and Duration
+            // Bottom Video Badge with Play icon and Duration in a compact capsule
             if (item.isVideo) {
-                Row(
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.5f),
+                    contentColor = Color.White,
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(if (columnCount == 4) 4.dp else 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(if (columnCount == 4) 3.dp else 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(
+                            horizontal = if (columnCount == 4) 3.5.dp else 4.5.dp,
+                            vertical = 1.dp
+                        ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(if (columnCount == 4) 8.5.dp else 10.dp)
+                        )
+                        Spacer(modifier = Modifier.width(1.5.dp))
+                        Text(
+                            text = FormatUtils.formatDuration(item.durationMs),
+                            color = Color.White,
+                            fontSize = if (columnCount == 4) 8.sp else 9.5.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
+                }
+            }
+        } else if (columnCount == 7 && item.isVideo && !isSelectionMode) {
+            // Minimal video icon capsule for month view
+            Surface(
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.5f),
+                contentColor = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(1.5.dp)
+            ) {
+                Box(
+                    modifier = Modifier.padding(1.5.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(if (columnCount == 4) 14.dp else 16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text(
-                        text = FormatUtils.formatDuration(item.durationMs),
-                        color = Color.White,
-                        fontSize = if (columnCount == 4) 9.sp else 11.sp,
-                        fontWeight = FontWeight.Medium
+                        modifier = Modifier.size(7.dp)
                     )
                 }
-            }
-        } else if (columnCount == 7 && item.isVideo && !isSelectionMode) {
-            // Minimal video icon for month view
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(2.dp),
-                contentAlignment = Alignment.BottomStart
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(12.dp)
-                )
             }
         }
     }

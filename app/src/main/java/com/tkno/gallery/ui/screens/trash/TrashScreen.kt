@@ -43,11 +43,33 @@ fun TrashScreen(
     animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
     val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("gallery_prefs", Context.MODE_PRIVATE) }
+    var showResolutionBadges by remember {
+        mutableStateOf(prefs.getBoolean("show_resolution_badges", true))
+    }
+    var cardRoundedCorners by remember {
+        mutableStateOf(prefs.getBoolean("card_rounded_corners", true))
+    }
+
     val trashedItems by repository.getTrashedMediaItemsFlow().collectAsState(initial = emptyList())
     val gridState = rememberLazyGridState()
 
     var isSelectionMode by remember { mutableStateOf(false) }
     val selectedItemIds = remember { mutableStateListOf<Long>() }
+
+    DisposableEffect(prefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            if (key == "show_resolution_badges") {
+                showResolutionBadges = p.getBoolean("show_resolution_badges", true)
+            } else if (key == "card_rounded_corners") {
+                cardRoundedCorners = p.getBoolean("card_rounded_corners", true)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
 
     val actionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -291,6 +313,8 @@ fun TrashScreen(
                             columnCount = 3,
                             isSelectionMode = isSelectionMode,
                             isSelected = isSelected,
+                            showResolutionBadge = showResolutionBadges,
+                            roundedCorners = cardRoundedCorners,
                             onClick = {
                                 if (isSelectionMode) {
                                     if (isSelected) selectedItemIds.remove(item.id)

@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -56,7 +57,9 @@ import com.tkno.gallery.ui.components.CustomIcons
 import com.tkno.gallery.ui.components.GalleryThumbnailIcon
 import com.tkno.gallery.ui.components.ImageIcon
 import com.tkno.gallery.ui.components.VideoTemplateIcon
+import com.tkno.gallery.ui.components.ClassicBottomBar
 import com.tkno.gallery.ui.components.FastScrollbar
+import com.tkno.gallery.ui.components.FloatingBottomBar
 import com.tkno.gallery.ui.components.MediaGridItem
 import androidx.compose.foundation.isSystemInDarkTheme
 import com.tkno.gallery.theme.TaskbarActivePrimaryDark
@@ -71,6 +74,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.tkno.gallery.ui.screens.menu.MenuScreen
 
+@Stable
 enum class GalleryGridLevel(val columnCount: Int) {
     Large(3),   // 3 items / row - Days
     Medium(4),  // 4 items / row - Days
@@ -96,6 +100,7 @@ enum class Tab {
     Media, Console, Videos, Images
 }
 
+@Stable
 data class TabInfo(
     val tab: Tab,
     val label: String,
@@ -107,7 +112,9 @@ data class TabInfo(
 fun HomeScreen(
     mediaItems: List<MediaItem>,
     albums: List<Album> = emptyList(),
+    focusedMediaId: Long? = null,
     onItemClick: (MediaItem, List<MediaItem>) -> Unit,
+    onVideoShortsClick: ((MediaItem, List<MediaItem>) -> Unit)? = null,
     onAlbumClick: (Album) -> Unit = {},
     onNavigateToRoute: (String) -> Unit = {},
     onOpenDrawer: () -> Unit = {},
@@ -119,6 +126,32 @@ fun HomeScreen(
     val haptic = LocalHapticFeedback.current
 
     val prefs = remember { context.getSharedPreferences("gallery_prefs", Context.MODE_PRIVATE) }
+
+    var useClassicTaskbar by remember {
+        mutableStateOf(prefs.getBoolean("use_classic_taskbar", false))
+    }
+
+    var showResolutionBadges by remember {
+        mutableStateOf(prefs.getBoolean("show_resolution_badges", true))
+    }
+
+    var isShortsModeActive by rememberSaveable {
+        mutableStateOf(prefs.getBoolean("video_shorts_mode", false))
+    }
+
+    DisposableEffect(prefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            if (key == "use_classic_taskbar") {
+                useClassicTaskbar = p.getBoolean("use_classic_taskbar", false)
+            } else if (key == "show_resolution_badges") {
+                showResolutionBadges = p.getBoolean("show_resolution_badges", true)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
 
     val savedLevelName = prefs.getString("gallery_grid_level", GalleryGridLevel.Large.name)
     var gridLevel by rememberSaveable {
@@ -298,6 +331,40 @@ fun HomeScreen(
     val videosGridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
     val imagesGridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
 
+    fun findGridIndexForMediaId(groupedMedia: Map<String, List<MediaItem>>, targetMediaId: Long): Int? {
+        var currentIndex = 0
+        for ((_, items) in groupedMedia) {
+            currentIndex++ // header item takes 1 slot
+            for (item in items) {
+                if (item.id == targetMediaId) {
+                    return currentIndex
+                }
+                currentIndex++
+            }
+        }
+        return null
+    }
+
+    // Instant & seamless synchronization of grid position with the currently viewed media item in full-screen pager
+    LaunchedEffect(focusedMediaId) {
+        val targetId = focusedMediaId ?: return@LaunchedEffect
+        val (stateToScroll, groupedMap) = when (currentTab) {
+            Tab.Media -> Pair(galleryGridState, allGrouped)
+            Tab.Videos -> Pair(videosGridState, videosGrouped)
+            Tab.Images -> Pair(imagesGridState, imagesGrouped)
+            Tab.Console -> Pair(null, null)
+        }
+        if (stateToScroll != null && groupedMap != null) {
+            val gridIndex = findGridIndexForMediaId(groupedMap, targetId)
+            if (gridIndex != null) {
+                val visibleIndices = stateToScroll.layoutInfo.visibleItemsInfo.map { it.index }
+                if (visibleIndices.isEmpty() || gridIndex !in visibleIndices) {
+                    stateToScroll.scrollToItem(gridIndex, 0)
+                }
+            }
+        }
+    }
+
     fun loadNavOrder(): List<Tab> {
         val allTabs = listOf(Tab.Media, Tab.Console, Tab.Videos, Tab.Images)
         val saved = prefs.getString("nav_tab_order", null) ?: return allTabs
@@ -316,31 +383,140 @@ fun HomeScreen(
     }
 
     val reorderableTabs = remember { mutableStateListOf(*loadNavOrder().toTypedArray()) }
-
-    var draggingIndex by remember { mutableStateOf<Int?>(null) }
-    var currentDragOffset by remember { mutableStateOf(0f) }
-    var itemWidthPx by remember { mutableStateOf(0f) }
-
-    @Composable
-    fun getTabInfo(tab: Tab): TabInfo {
-        return when (tab) {
-            Tab.Media -> TabInfo(Tab.Media, "Gallery", GalleryThumbnailIcon)
-            Tab.Console -> TabInfo(Tab.Console, "Albums", AutoAwesomeMosaicIcon)
-            Tab.Videos -> TabInfo(Tab.Videos, "Videos", VideoTemplateIcon)
-            Tab.Images -> TabInfo(Tab.Images, "Images", ImageIcon)
-        }
-    }
-
     val activeColor = MaterialTheme.colorScheme.primary
-    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val indicatorCapsuleColor = MaterialTheme.colorScheme.secondaryContainer
-    val navContainerColor = MaterialTheme.colorScheme.background
 
-    Scaffold(
-        topBar = {
-            val selectedCount = if (currentTab == Tab.Console) selectedAlbumIds.size else selectedItemIds.size
-            TopAppBar(
-                title = {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // 1. Grid content (fills the whole screen edge to edge behind top and bottom floating bars)
+        when (currentTab) {
+            Tab.Media -> {
+                MediaGridContent(
+                    groupedMedia = allGrouped,
+                    gridLevel = gridLevel,
+                    isSelectionMode = isSelectionMode,
+                    selectedItemIds = selectedItemIds,
+                    onToggleSelect = ::toggleItemSelection,
+                    onEnterSelectionMode = ::enterSelectionMode,
+                    onZoomIn = ::zoomIn,
+                    onZoomOut = ::zoomOut,
+                    state = galleryGridState,
+                    onItemClick = onItemClick,
+                    accentColor = activeColor,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope
+                )
+            }
+            Tab.Console -> {
+                ConsoleContent(
+                    albums = albums,
+                    state = albumsGridState,
+                    isSelectionMode = isSelectionMode,
+                    selectedAlbumIds = selectedAlbumIds,
+                    onToggleSelect = ::toggleAlbumSelection,
+                    onEnterSelectionMode = ::enterAlbumSelectionMode,
+                    onAlbumClick = onAlbumClick
+                )
+            }
+            Tab.Videos -> {
+                MediaGridContent(
+                    groupedMedia = videosGrouped,
+                    gridLevel = gridLevel,
+                    isSelectionMode = isSelectionMode,
+                    selectedItemIds = selectedItemIds,
+                    onToggleSelect = ::toggleItemSelection,
+                    onEnterSelectionMode = ::enterSelectionMode,
+                    onZoomIn = ::zoomIn,
+                    onZoomOut = ::zoomOut,
+                    state = videosGridState,
+                    onItemClick = { item, list ->
+                        if (isShortsModeActive && onVideoShortsClick != null) {
+                            onVideoShortsClick(item, list)
+                        } else {
+                            onItemClick(item, list)
+                        }
+                    },
+                    accentColor = activeColor,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope
+                )
+            }
+            Tab.Images -> {
+                MediaGridContent(
+                    groupedMedia = imagesGrouped,
+                    gridLevel = gridLevel,
+                    isSelectionMode = isSelectionMode,
+                    selectedItemIds = selectedItemIds,
+                    onToggleSelect = ::toggleItemSelection,
+                    onEnterSelectionMode = ::enterSelectionMode,
+                    onZoomIn = ::zoomIn,
+                    onZoomOut = ::zoomOut,
+                    state = imagesGridState,
+                    onItemClick = onItemClick,
+                    accentColor = activeColor,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope
+                )
+            }
+        }
+
+        // 2. Floating Top Bar Capsules (Left & Right) with NO solid bar background
+        val selectedCount = if (currentTab == Tab.Console) selectedAlbumIds.size else selectedItemIds.size
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Left Capsule: [ Menu Button + Title ("Gallery", "Albums", "Videos", "Images") ]
+            Surface(
+                color = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+                shape = RoundedCornerShape(percent = 50),
+                tonalElevation = 0.dp,
+                shadowElevation = 6.dp,
+                modifier = Modifier.height(46.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 4.dp, end = 16.dp)
+                ) {
+                    if (isSelectionMode) {
+                        IconButton(
+                            onClick = {
+                                isSelectionMode = false
+                                selectedItemIds.clear()
+                                selectedAlbumIds.clear()
+                            },
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Selection",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    } else {
+                        IconButton(
+                            onClick = onOpenDrawer,
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Icon(
+                                imageVector = CustomIcons.LeftPanelOpen,
+                                contentDescription = "Open Drawer",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
                     Text(
                         text = if (isSelectionMode) {
                             "$selectedCount"
@@ -352,41 +528,31 @@ fun HomeScreen(
                                 Tab.Images -> "Images"
                             }
                         },
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                },
-                navigationIcon = {
-                    if (isSelectionMode) {
-                        IconButton(
-                            onClick = {
-                                isSelectionMode = false
-                                selectedItemIds.clear()
-                                selectedAlbumIds.clear()
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Close Selection",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    } else {
-                        IconButton(onClick = onOpenDrawer) {
-                            Icon(
-                                imageVector = CustomIcons.LeftPanelOpen,
-                                contentDescription = "Open Drawer",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                },
-                actions = {
+                }
+            }
+
+            // Right Capsule: [ Heart Icon + 3-dots Menu Icon ]
+            Surface(
+                color = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+                shape = RoundedCornerShape(percent = 50),
+                tonalElevation = 0.dp,
+                shadowElevation = 6.dp,
+                modifier = Modifier.height(46.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                ) {
                     if (isSelectionMode) {
                         // Action 1: Share
                         IconButton(
                             onClick = { shareSelectedItems() },
-                            enabled = selectedCount > 0 && currentTab != Tab.Console
+                            enabled = selectedCount > 0 && currentTab != Tab.Console,
+                            modifier = Modifier.size(38.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Share,
@@ -395,14 +561,16 @@ fun HomeScreen(
                                     MaterialTheme.colorScheme.onSurface
                                 } else {
                                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                }
+                                },
+                                modifier = Modifier.size(20.dp)
                             )
                         }
 
                         // Action 2: Trash / Delete
                         IconButton(
                             onClick = { deleteSelectedItems() },
-                            enabled = selectedCount > 0 && currentTab != Tab.Console
+                            enabled = selectedCount > 0 && currentTab != Tab.Console,
+                            modifier = Modifier.size(38.dp)
                         ) {
                             Icon(
                                 imageVector = CustomIcons.Delete,
@@ -411,17 +579,22 @@ fun HomeScreen(
                                     MaterialTheme.colorScheme.onSurface
                                 } else {
                                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                }
+                                },
+                                modifier = Modifier.size(20.dp)
                             )
                         }
 
                         // Action 3: 3-dots Menu
                         Box {
-                            IconButton(onClick = { showMoreMenu = true }) {
+                            IconButton(
+                                onClick = { showMoreMenu = true },
+                                modifier = Modifier.size(38.dp)
+                            ) {
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
                                     contentDescription = "More Options",
-                                    tint = MaterialTheme.colorScheme.onSurface
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
 
@@ -495,24 +668,49 @@ fun HomeScreen(
                             }
                         }
                     } else {
-                        if (currentTab == Tab.Media || currentTab == Tab.Videos || currentTab == Tab.Images) {
-                            IconButton(onClick = {
-                                isFavoriteFilterActive = !isFavoriteFilterActive
-                            }) {
+                        if (currentTab == Tab.Videos) {
+                            IconButton(
+                                onClick = {
+                                    isShortsModeActive = !isShortsModeActive
+                                    prefs.edit().putBoolean("video_shorts_mode", isShortsModeActive).apply()
+                                },
+                                modifier = Modifier.size(38.dp)
+                            ) {
                                 Icon(
-                                    imageVector = if (isFavoriteFilterActive) Icons.Filled.Favorite else CustomIcons.Favorite,
+                                    imageVector = CustomIcons.KeyboardDoubleArrowDown,
+                                    contentDescription = "TikTok Scrolling Video Mode",
+                                    tint = if (isShortsModeActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        if (currentTab == Tab.Media || currentTab == Tab.Videos || currentTab == Tab.Images) {
+                            IconButton(
+                                onClick = {
+                                    isFavoriteFilterActive = !isFavoriteFilterActive
+                                },
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isFavoriteFilterActive) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                                     contentDescription = "Favorites Only",
-                                    tint = if (isFavoriteFilterActive) Color.Red else MaterialTheme.colorScheme.onSurface
+                                    tint = if (isFavoriteFilterActive) Color.Red else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
 
                         Box {
-                            IconButton(onClick = { showMoreMenu = true }) {
+                            IconButton(
+                                onClick = { showMoreMenu = true },
+                                modifier = Modifier.size(38.dp)
+                            ) {
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
                                     contentDescription = "More Options",
-                                    tint = MaterialTheme.colorScheme.onSurface
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
 
@@ -549,193 +747,35 @@ fun HomeScreen(
                             }
                         }
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        },
-        bottomBar = {
-            NavigationBar(
-                containerColor = navContainerColor,
-                tonalElevation = 0.dp,
-                modifier = Modifier
-                    .height(72.dp)
-                    .onGloballyPositioned { coordinates ->
-                        val totalWidth = coordinates.size.width.toFloat()
-                        if (totalWidth > 0) {
-                            itemWidthPx = totalWidth / 4f
-                        }
-                    }
-            ) {
-                // Render the 4 reorderable tabs (Gallery, Albums, Videos, Images)
-                reorderableTabs.forEachIndexed { index, tab ->
-                    val info = getTabInfo(tab)
-                    val isSelected = currentTab == tab
-                    val isDragging = draggingIndex == index
-
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = { currentTab = tab },
-                        icon = {
-                            Icon(
-                                imageVector = info.icon,
-                                contentDescription = info.label,
-                                tint = if (isSelected) activeColor else inactiveColor
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = info.label,
-                                color = if (isSelected) activeColor else inactiveColor,
-                                fontSize = 12.sp
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = indicatorCapsuleColor
-                        ),
-                        modifier = Modifier
-                            .graphicsLayer {
-                                if (isDragging) {
-                                    translationX = currentDragOffset
-                                    scaleX = 1.12f
-                                    scaleY = 1.12f
-                                }
-                            }
-                            .pointerInput(index) {
-                                awaitEachGesture {
-                                    val down = awaitFirstDown(requireUnconsumed = false)
-                                    var isLongPressActive = false
-
-                                    val longPressTimer = scope.launch {
-                                        delay(viewConfiguration.longPressTimeoutMillis)
-                                        isLongPressActive = true
-                                        draggingIndex = index
-                                        currentDragOffset = 0f
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    }
-
-                                    val pointer = down.id
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        val change = event.changes.firstOrNull { it.id == pointer }
-
-                                        if (change == null || !change.pressed) {
-                                            longPressTimer.cancel()
-                                            if (isLongPressActive) {
-                                                draggingIndex = null
-                                                currentDragOffset = 0f
-                                            }
-                                            break
-                                        }
-
-                                        if (!isLongPressActive) {
-                                            val diff = change.position - down.position
-                                            if (diff.getDistance() > viewConfiguration.touchSlop) {
-                                                longPressTimer.cancel()
-                                            }
-                                        } else {
-                                            change.consume()
-                                            val deltaX = change.position.x - change.previousPosition.x
-                                            val activeIndex = draggingIndex ?: break
-                                            currentDragOffset += deltaX
-
-                                            val threshold = if (itemWidthPx > 0f) itemWidthPx * 0.5f else 100f
-
-                                            if (currentDragOffset > threshold && activeIndex < reorderableTabs.size - 1) {
-                                                val temp = reorderableTabs[activeIndex]
-                                                reorderableTabs[activeIndex] = reorderableTabs[activeIndex + 1]
-                                                reorderableTabs[activeIndex + 1] = temp
-                                                draggingIndex = activeIndex + 1
-                                                currentDragOffset -= itemWidthPx
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                saveNavOrder(reorderableTabs)
-                                            } else if (currentDragOffset < -threshold && activeIndex > 0) {
-                                                val temp = reorderableTabs[activeIndex]
-                                                reorderableTabs[activeIndex] = reorderableTabs[activeIndex - 1]
-                                                reorderableTabs[activeIndex - 1] = temp
-                                                draggingIndex = activeIndex - 1
-                                                currentDragOffset += itemWidthPx
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                saveNavOrder(reorderableTabs)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                    )
                 }
             }
         }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
+
+        // 3. Bottom Bar (Classic full-width NavigationBar or Floating Pill Dock)
+        AnimatedVisibility(
+            visible = !isSelectionMode,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(tween(250)),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(tween(200)),
+            modifier = Modifier.align(Alignment.BottomCenter)
         ) {
-            when (currentTab) {
-                Tab.Media -> {
-                    MediaGridContent(
-                        groupedMedia = allGrouped,
-                        gridLevel = gridLevel,
-                        isSelectionMode = isSelectionMode,
-                        selectedItemIds = selectedItemIds,
-                        onToggleSelect = ::toggleItemSelection,
-                        onEnterSelectionMode = ::enterSelectionMode,
-                        onZoomIn = ::zoomIn,
-                        onZoomOut = ::zoomOut,
-                        state = galleryGridState,
-                        onItemClick = onItemClick,
-                        accentColor = activeColor,
-                        sharedTransitionScope = sharedTransitionScope,
-                        animatedVisibilityScope = animatedVisibilityScope
-                    )
-                }
-                Tab.Console -> {
-                    ConsoleContent(
-                        albums = albums,
-                        state = albumsGridState,
-                        isSelectionMode = isSelectionMode,
-                        selectedAlbumIds = selectedAlbumIds,
-                        onToggleSelect = ::toggleAlbumSelection,
-                        onEnterSelectionMode = ::enterAlbumSelectionMode,
-                        onAlbumClick = onAlbumClick
-                    )
-                }
-                Tab.Videos -> {
-                    MediaGridContent(
-                        groupedMedia = videosGrouped,
-                        gridLevel = gridLevel,
-                        isSelectionMode = isSelectionMode,
-                        selectedItemIds = selectedItemIds,
-                        onToggleSelect = ::toggleItemSelection,
-                        onEnterSelectionMode = ::enterSelectionMode,
-                        onZoomIn = ::zoomIn,
-                        onZoomOut = ::zoomOut,
-                        state = videosGridState,
-                        onItemClick = onItemClick,
-                        accentColor = activeColor,
-                        sharedTransitionScope = sharedTransitionScope,
-                        animatedVisibilityScope = animatedVisibilityScope
-                    )
-                }
-                Tab.Images -> {
-                    MediaGridContent(
-                        groupedMedia = imagesGrouped,
-                        gridLevel = gridLevel,
-                        isSelectionMode = isSelectionMode,
-                        selectedItemIds = selectedItemIds,
-                        onToggleSelect = ::toggleItemSelection,
-                        onEnterSelectionMode = ::enterSelectionMode,
-                        onZoomIn = ::zoomIn,
-                        onZoomOut = ::zoomOut,
-                        state = imagesGridState,
-                        onItemClick = onItemClick,
-                        accentColor = activeColor,
-                        sharedTransitionScope = sharedTransitionScope,
-                        animatedVisibilityScope = animatedVisibilityScope
-                    )
-                }
+            if (useClassicTaskbar) {
+                ClassicBottomBar(
+                    tabs = reorderableTabs,
+                    currentTab = currentTab,
+                    onTabSelect = { currentTab = it },
+                    onOrderChanged = { newOrder ->
+                        saveNavOrder(newOrder)
+                    }
+                )
+            } else {
+                FloatingBottomBar(
+                    tabs = reorderableTabs,
+                    currentTab = currentTab,
+                    onTabSelect = { currentTab = it },
+                    onOrderChanged = { newOrder ->
+                        saveNavOrder(newOrder)
+                    }
+                )
             }
         }
     }
@@ -758,6 +798,29 @@ private fun MediaGridContent(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
+    val context = LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences("gallery_prefs", Context.MODE_PRIVATE) }
+    var showResolutionBadges by remember {
+        mutableStateOf(prefs.getBoolean("show_resolution_badges", true))
+    }
+    var cardRoundedCorners by remember {
+        mutableStateOf(prefs.getBoolean("card_rounded_corners", true))
+    }
+
+    DisposableEffect(prefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            if (key == "show_resolution_badges") {
+                showResolutionBadges = p.getBoolean("show_resolution_badges", true)
+            } else if (key == "card_rounded_corners") {
+                cardRoundedCorners = p.getBoolean("card_rounded_corners", true)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
     val fullFlattenedList = remember(groupedMedia) {
         groupedMedia.values.flatten()
     }
@@ -784,10 +847,22 @@ private fun MediaGridContent(
                         var accumulatedZoom = 1f
                         do {
                             val event = awaitPointerEvent(PointerEventPass.Main)
-                            val pressedChanges = event.changes.filter { it.pressed }
-                            if (pressedChanges.size >= 2) {
-                                val p1 = pressedChanges[0]
-                                val p2 = pressedChanges[1]
+                            val changes = event.changes
+                            var count = 0
+                            var p1: androidx.compose.ui.input.pointer.PointerInputChange? = null
+                            var p2: androidx.compose.ui.input.pointer.PointerInputChange? = null
+                            for (i in 0 until changes.size) {
+                                val change = changes[i]
+                                if (change.pressed) {
+                                    count++
+                                    if (count == 1) p1 = change
+                                    else if (count == 2) {
+                                        p2 = change
+                                        break
+                                    }
+                                }
+                            }
+                            if (count >= 2 && p1 != null && p2 != null) {
                                 val prevDistance = (p1.previousPosition - p2.previousPosition).getDistance()
                                 val currDistance = (p1.position - p2.position).getDistance()
                                 if (prevDistance > 0f && currDistance > 0f) {
@@ -800,7 +875,9 @@ private fun MediaGridContent(
                                         onZoomOut()
                                         accumulatedZoom = 1f
                                     }
-                                    pressedChanges.forEach { it.consume() }
+                                    for (i in 0 until changes.size) {
+                                        changes[i].consume()
+                                    }
                                 }
                             } else {
                                 accumulatedZoom = 1f
@@ -809,16 +886,22 @@ private fun MediaGridContent(
                     }
                 }
         ) {
+            val sidePadding = when {
+                columnCount >= 10 -> 1.dp
+                columnCount >= 7 -> 2.dp
+                else -> 4.dp
+            }
+            val topPadding = 64.dp + WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            val bottomPadding = 96.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
             LazyVerticalGrid(
                 columns = GridCells.Fixed(columnCount),
                 state = state,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
-                    when {
-                        columnCount >= 10 -> 1.dp
-                        columnCount >= 7 -> 2.dp
-                        else -> 4.dp
-                    }
+                    start = sidePadding,
+                    end = sidePadding,
+                    top = topPadding,
+                    bottom = bottomPadding
                 )
             ) {
                 groupedMedia.forEach { (headerDate, itemsInGroup) ->
@@ -829,22 +912,14 @@ private fun MediaGridContent(
                     ) {
                         Text(
                             text = headerDate,
-                            fontSize = when {
-                                columnCount >= 10 -> 18.sp
-                                columnCount >= 7 -> 16.sp
-                                else -> 14.sp
-                            },
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 8.dp)
                                 .padding(
-                                    top = when {
-                                        columnCount >= 10 -> 16.dp
-                                        columnCount >= 7 -> 14.dp
-                                        else -> 12.dp
-                                    },
+                                    top = 12.dp,
                                     bottom = 6.dp
                                 )
                         )
@@ -861,6 +936,8 @@ private fun MediaGridContent(
                             columnCount = columnCount,
                             isSelectionMode = isSelectionMode,
                             isSelected = isSelected,
+                            showResolutionBadge = showResolutionBadges,
+                            roundedCorners = cardRoundedCorners,
                             onClick = {
                                 if (isSelectionMode) {
                                     onToggleSelect(item.id)
@@ -920,11 +997,18 @@ private fun ConsoleContent(
             )
         }
     } else {
+        val topPadding = 64.dp + WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val bottomPadding = 96.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             state = state,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(12.dp),
+            contentPadding = PaddingValues(
+                start = 12.dp,
+                end = 12.dp,
+                top = topPadding,
+                bottom = bottomPadding
+            ),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {

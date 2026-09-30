@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,7 +50,7 @@ private const val horizontal = 8
 private const val vertical = 12
 
 private val PreferenceTitleVariant: TextStyle
-    @Composable get() = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp)
+    @Composable get() = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, fontWeight = FontWeight.Normal)
 
 private val PreferenceTitle
     @Composable get() = MaterialTheme.typography.titleMedium
@@ -347,7 +348,7 @@ fun PreferencesHintCard(
 ) {
     Surface(
         onClick = onClick,
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.extraLarge, // RoundedCornerShape(28.dp)
         color = containerColor,
         contentColor = contentColor,
         modifier = Modifier
@@ -387,7 +388,7 @@ fun PreferencesHintCard(
                     Text(
                         text = title,
                         maxLines = 1,
-                        style = PreferenceTitleVariant,
+                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
                         color = textColor,
                     )
                     if (description != null)

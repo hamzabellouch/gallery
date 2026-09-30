@@ -42,10 +42,12 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VolunteerActivism
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.SettingsApplications
 import androidx.compose.material3.*
+import androidx.compose.ui.semantics.Role
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -69,7 +71,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -83,7 +85,7 @@ import com.tkno.gallery.ui.svg.drawablevectors.coder
 import java.util.Locale
 
 enum class MenuSubScreen {
-    Main, Settings, GeneralSettings, LookAndFeel, Languages, DarkTheme, Sponsor, Troubleshooting, About, Credits, Update
+    Main, Settings, GeneralSettings, LookAndFeel, InterfaceAndInteraction, Languages, DarkTheme, Sponsor, Troubleshooting, About, Credits, Update
 }
 
 @Composable
@@ -137,22 +139,17 @@ fun MainMenuList(
                     Text(
                         text = stringResource(id = R.string.menu),
                         color = MaterialTheme.colorScheme.onBackground,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(id = R.string.menu_options_listed_count, 4),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(bottom = 3.dp)
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 24.sp
+                        )
                     )
                 }
             }
 
             Spacer(Modifier.height(4.dp))
 
-            val isSettingsSelected = currentRoute in listOf("settings", "general_settings", "appearance", "dark_theme", "dynamic_color", "languages")
+            val isSettingsSelected = currentRoute in listOf("settings", "general_settings", "appearance", "dark_theme", "dynamic_color", "languages", "interface_and_interaction")
             val isSponsorSelected = currentRoute == "sponsor"
             val isTroubleshootingSelected = currentRoute == "troubleshooting"
             val isAboutSelected = currentRoute in listOf("about", "credits", "update")
@@ -161,14 +158,19 @@ fun MainMenuList(
                 unselectedContainerColor = Color.Transparent,
                 unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 unselectedTextColor = MaterialTheme.colorScheme.onSurface,
-                selectedContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                selectedTextColor = MaterialTheme.colorScheme.onSurface
+                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                selectedTextColor = MaterialTheme.colorScheme.onSecondaryContainer
             )
             ProvideTextStyle(MaterialTheme.typography.labelLarge) {
                 NavigationDrawerItem(
                     label = { Text(stringResource(id = R.string.settings)) },
-                    icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                    icon = {
+                        Icon(
+                            imageVector = if (isSettingsSelected) Icons.Filled.Settings else Icons.Outlined.Settings,
+                            contentDescription = null
+                        )
+                    },
                     selected = isSettingsSelected,
                     onClick = { onNavigateToRoute("settings") },
                     colors = drawerItemColors,
@@ -176,7 +178,12 @@ fun MainMenuList(
                 )
                 NavigationDrawerItem(
                     label = { Text(stringResource(id = R.string.sponsor)) },
-                    icon = { Icon(Icons.Filled.VolunteerActivism, contentDescription = null) },
+                    icon = {
+                        Icon(
+                            imageVector = if (isSponsorSelected) Icons.Filled.VolunteerActivism else Icons.Outlined.VolunteerActivism,
+                            contentDescription = null
+                        )
+                    },
                     selected = isSponsorSelected,
                     onClick = { onNavigateToRoute("sponsor") },
                     colors = drawerItemColors,
@@ -184,7 +191,12 @@ fun MainMenuList(
                 )
                 NavigationDrawerItem(
                     label = { Text(stringResource(id = R.string.trouble_shooting)) },
-                    icon = { Icon(Icons.Filled.BugReport, contentDescription = null) },
+                    icon = {
+                        Icon(
+                            imageVector = if (isTroubleshootingSelected) Icons.Filled.BugReport else Icons.Outlined.BugReport,
+                            contentDescription = null
+                        )
+                    },
                     selected = isTroubleshootingSelected,
                     onClick = { onNavigateToRoute("troubleshooting") },
                     colors = drawerItemColors,
@@ -192,7 +204,12 @@ fun MainMenuList(
                 )
                 NavigationDrawerItem(
                     label = { Text(stringResource(id = R.string.about)) },
-                    icon = { Icon(Icons.Filled.Info, contentDescription = null) },
+                    icon = {
+                        Icon(
+                            imageVector = if (isAboutSelected) Icons.Filled.Info else Icons.Outlined.Info,
+                            contentDescription = null
+                        )
+                    },
                     selected = isAboutSelected,
                     onClick = { onNavigateToRoute("about") },
                     colors = drawerItemColors,
@@ -217,7 +234,7 @@ fun SettingsPage(
             contentPadding = paddingValues
         ) {
             item {
-                SettingItem(
+                PreferenceItem(
                     title = stringResource(id = R.string.general_settings),
                     description = stringResource(id = R.string.general_settings_desc),
                     icon = Icons.Rounded.SettingsApplications,
@@ -225,11 +242,19 @@ fun SettingsPage(
                 )
             }
             item {
-                SettingItem(
+                PreferenceItem(
                     title = stringResource(id = R.string.look_and_feel),
                     description = stringResource(id = R.string.display_settings),
                     icon = Icons.Rounded.Palette,
                     onClick = { onNavigateTo("appearance") }
+                )
+            }
+            item {
+                PreferenceItem(
+                    title = stringResource(R.string.interface_and_interaction),
+                    description = stringResource(R.string.interface_and_interaction_desc),
+                    icon = Icons.Outlined.TouchApp,
+                    onClick = { onNavigateTo("interface_and_interaction") }
                 )
             }
         }
@@ -240,6 +265,29 @@ fun SettingsPage(
 fun GeneralSettingsPage(
     onNavigateBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("gallery_prefs", android.content.Context.MODE_PRIVATE) }
+    var showResolutionBadges by remember {
+        mutableStateOf(prefs.getBoolean("show_resolution_badges", true))
+    }
+    var cardRoundedCorners by remember {
+        mutableStateOf(prefs.getBoolean("card_rounded_corners", true))
+    }
+
+    DisposableEffect(prefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            if (key == "show_resolution_badges") {
+                showResolutionBadges = p.getBoolean("show_resolution_badges", true)
+            } else if (key == "card_rounded_corners") {
+                cardRoundedCorners = p.getBoolean("card_rounded_corners", true)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
     BasePreferencePage(
         title = stringResource(id = R.string.general_settings),
         onBack = onNavigateBack
@@ -248,7 +296,32 @@ fun GeneralSettingsPage(
             modifier = Modifier.fillMaxSize(),
             contentPadding = paddingValues
         ) {
-            // Left intentionally empty inside as requested
+            item {
+                PreferenceSwitch(
+                    title = stringResource(id = R.string.show_resolution_badges),
+                    icon = Icons.Outlined.HighQuality,
+                    isChecked = showResolutionBadges,
+                    description = stringResource(id = R.string.show_resolution_badges_desc),
+                    onClick = {
+                        val newValue = !showResolutionBadges
+                        showResolutionBadges = newValue
+                        prefs.edit().putBoolean("show_resolution_badges", newValue).apply()
+                    }
+                )
+            }
+            item {
+                PreferenceSwitch(
+                    title = stringResource(id = R.string.card_rounded_corners),
+                    icon = Icons.Outlined.RoundedCorner,
+                    isChecked = cardRoundedCorners,
+                    description = stringResource(id = R.string.card_rounded_corners_desc),
+                    onClick = {
+                        val newValue = !cardRoundedCorners
+                        cardRoundedCorners = newValue
+                        prefs.edit().putBoolean("card_rounded_corners", newValue).apply()
+                    }
+                )
+            }
         }
     }
 }
@@ -393,6 +466,66 @@ fun AppearancePreferences(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun InterfaceAndInteractionPreferences(
+    onNavigateBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("gallery_prefs", android.content.Context.MODE_PRIVATE) }
+    var useClassicViewerBar by remember { mutableStateOf(prefs.getBoolean("classic_viewer_bar", false)) }
+    var useClassicTaskbar by remember { mutableStateOf(prefs.getBoolean("use_classic_taskbar", false)) }
+
+    DisposableEffect(prefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            if (key == "classic_viewer_bar") {
+                useClassicViewerBar = p.getBoolean("classic_viewer_bar", false)
+            } else if (key == "use_classic_taskbar") {
+                useClassicTaskbar = p.getBoolean("use_classic_taskbar", false)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
+    BasePreferencePage(
+        title = stringResource(id = R.string.interface_and_interaction),
+        onBack = onNavigateBack,
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+        ) {
+            PreferenceSwitch(
+                title = stringResource(id = R.string.use_classic_taskbar),
+                icon = Icons.Outlined.Dock,
+                isChecked = useClassicTaskbar,
+                description = stringResource(id = R.string.use_classic_taskbar_desc),
+                onClick = {
+                    val newValue = !useClassicTaskbar
+                    useClassicTaskbar = newValue
+                    prefs.edit().putBoolean("use_classic_taskbar", newValue).apply()
+                }
+            )
+            PreferenceSwitch(
+                title = stringResource(id = R.string.classic_viewer_bar),
+                icon = Icons.Outlined.ViewAgenda,
+                isChecked = useClassicViewerBar,
+                description = stringResource(id = R.string.classic_viewer_bar_desc),
+                onClick = {
+                    val newValue = !useClassicViewerBar
+                    useClassicViewerBar = newValue
+                    prefs.edit().putBoolean("classic_viewer_bar", newValue).apply()
+                }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun DarkThemePreferences(onNavigateBack: () -> Unit) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
@@ -416,7 +549,6 @@ fun DarkThemePreferences(onNavigateBack: () -> Unit) {
                     },
                     navigationIcon = { BackButton { onNavigateBack() } },
                     scrollBehavior = scrollBehavior,
-                    windowInsets = WindowInsets(0.dp),
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
                         scrolledContainerColor = MaterialTheme.colorScheme.background,
@@ -510,7 +642,6 @@ fun DynamicColorPreferences(onNavigateBack: () -> Unit) {
                     },
                     navigationIcon = { BackButton { onNavigateBack() } },
                     scrollBehavior = scrollBehavior,
-                    windowInsets = WindowInsets(0.dp),
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
                         scrolledContainerColor = MaterialTheme.colorScheme.background,
@@ -686,7 +817,6 @@ fun LanguagesPage(onNavigateBack: () -> Unit) {
                     },
                     navigationIcon = { BackButton { onNavigateBack() } },
                     scrollBehavior = scrollBehavior,
-                    windowInsets = WindowInsets(0.dp),
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
                         scrolledContainerColor = MaterialTheme.colorScheme.background,
@@ -792,7 +922,6 @@ fun SponsorsPage(onNavigateBack: () -> Unit) {
                     },
                     navigationIcon = { BackButton { onNavigateBack() } },
                     scrollBehavior = scrollBehavior,
-                    windowInsets = WindowInsets(0.dp),
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
                         scrolledContainerColor = MaterialTheme.colorScheme.background,
@@ -868,6 +997,30 @@ fun SponsorsPage(onNavigateBack: () -> Unit) {
 
                                 Text(text = stringResource(id = R.string.sponsor))
                             }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Button(
+                                onClick = {
+                                    uriHandler.openUri("https://github.com/hamzabellouch/gallery")
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFFFC107),
+                                    contentColor = Color(0xFF1E1E1E),
+                                ),
+                                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                                modifier = Modifier.align(Alignment.End),
+                            ) {
+                                Icon(
+                                    modifier = Modifier
+                                        .padding(end = 8.dp)
+                                        .size(ButtonDefaults.IconSize),
+                                    imageVector = CustomIcons.Star,
+                                    contentDescription = null,
+                                )
+
+                                Text(text = stringResource(id = R.string.star))
+                            }
                         }
                     }
                 }
@@ -878,11 +1031,14 @@ fun SponsorsPage(onNavigateBack: () -> Unit) {
 
 /* ---------------- TroubleShootingPage ---------------- */
 
+private const val reportProblemFormUrl = "https://docs.google.com/forms/d/e/1FAIpQLScLCRgTEY0IqBHoJdyzaCDa92a6tOyeOSz1TScqj0e8iQ89MQ/viewform?usp=header"
+
 @Composable
 fun TroubleShootingPage(onNavigateBack: () -> Unit) {
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
     var showContactDialog by remember { mutableStateOf(false) }
+    var showReportDialog by remember { mutableStateOf(false) }
 
     val prefs = remember { context.getSharedPreferences("gallery_prefs", android.content.Context.MODE_PRIVATE) }
     var darkThemePref by remember { mutableIntStateOf(prefs.getInt("dark_theme_mode", 0)) }
@@ -907,6 +1063,9 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
 
     val emailContainer = if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)
     val emailContent = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
+
+    val whatsappContainer = if (isDark) Color(0xFF0A2B1D) else Color(0xFFE8F8F0)
+    val whatsappContent = if (isDark) Color(0xFF25D366) else Color(0xFF128C7E)
 
     val facebookContainer = if (isDark) Color(0xFF0D2646) else Color(0xFFE7F3FF)
     val facebookContent = if (isDark) Color(0xFF4599FF) else Color(0xFF1877F2)
@@ -941,7 +1100,7 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
     ) { padding ->
         LazyColumn(contentPadding = padding) {
             item {
-                val pagerState = rememberPagerState(initialPage = 0) { 10 }
+                val pagerState = rememberPagerState(initialPage = 0) { 11 }
                 Column(modifier = Modifier.fillMaxWidth()) {
                     HorizontalPager(
                         state = pagerState,
@@ -958,6 +1117,17 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
                             ) { showContactDialog = true }
 
                             1 -> PreferencesHintCard(
+                                title = stringResource(id = R.string.whatsapp),
+                                icon = painterResource(id = R.drawable.ic_whatsapp),
+                                description = stringResource(id = R.string.whatsapp_desc),
+                                containerColor = whatsappContainer,
+                                contentColor = whatsappContent,
+                                textColor = Color.White,
+                            ) { 
+                                uriHandler.openUri("https://whatsapp.com/channel/0029Vb7MArw0LKZMpjjqOk2P") 
+                            }
+
+                            2 -> PreferencesHintCard(
                                 title = stringResource(id = R.string.facebook),
                                 icon = painterResource(id = R.drawable.ic_facebook),
                                 description = stringResource(id = R.string.facebook_desc),
@@ -966,7 +1136,7 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
                                 textColor = Color.White,
                             ) { uriHandler.openUri("https://www.facebook.com/hamzabellouch1") }
 
-                            2 -> PreferencesHintCard(
+                            3 -> PreferencesHintCard(
                                 title = stringResource(id = R.string.instagram),
                                 icon = painterResource(id = R.drawable.ic_instagram),
                                 description = stringResource(id = R.string.instagram_desc),
@@ -975,7 +1145,7 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
                                 textColor = Color.White,
                             ) { uriHandler.openUri("https://www.instagram.com/hamzabellouch0") }
 
-                            3 -> PreferencesHintCard(
+                            4 -> PreferencesHintCard(
                                 title = stringResource(id = R.string.linkedin),
                                 icon = painterResource(id = R.drawable.ic_linkedin),
                                 description = stringResource(id = R.string.linkedin_desc),
@@ -984,7 +1154,7 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
                                 textColor = Color.White,
                             ) { uriHandler.openUri("https://www.linkedin.com/in/hamzabellouch") }
 
-                            4 -> PreferencesHintCard(
+                            5 -> PreferencesHintCard(
                                 title = stringResource(id = R.string.x_platform),
                                 icon = painterResource(id = R.drawable.ic_x),
                                 description = stringResource(id = R.string.x_desc),
@@ -993,7 +1163,7 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
                                 textColor = Color.White,
                             ) { uriHandler.openUri("https://x.com/hamzabellouch0") }
 
-                            5 -> PreferencesHintCard(
+                            6 -> PreferencesHintCard(
                                 title = stringResource(id = R.string.youtube),
                                 icon = painterResource(id = R.drawable.ic_youtube),
                                 description = stringResource(id = R.string.youtube_desc),
@@ -1002,7 +1172,7 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
                                 textColor = Color.White,
                             ) { uriHandler.openUri("https://www.youtube.com/@hamzabellouch") }
 
-                            6 -> PreferencesHintCard(
+                            7 -> PreferencesHintCard(
                                 title = stringResource(id = R.string.tiktok),
                                 icon = painterResource(id = R.drawable.ic_tiktok),
                                 description = stringResource(id = R.string.tiktok_desc),
@@ -1011,7 +1181,7 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
                                 textColor = Color.White,
                             ) { uriHandler.openUri("https://www.tiktok.com/@hamzabellouch0") }
 
-                            7 -> PreferencesHintCard(
+                            8 -> PreferencesHintCard(
                                 title = stringResource(id = R.string.reddit),
                                 icon = painterResource(id = R.drawable.ic_reddit),
                                 description = stringResource(id = R.string.reddit_desc),
@@ -1020,7 +1190,7 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
                                 textColor = Color.White,
                             ) { uriHandler.openUri("https://www.reddit.com") }
 
-                            8 -> PreferencesHintCard(
+                            9 -> PreferencesHintCard(
                                 title = stringResource(id = R.string.bluesky),
                                 icon = painterResource(id = R.drawable.ic_bluesky),
                                 description = stringResource(id = R.string.bluesky_desc),
@@ -1029,7 +1199,7 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
                                 textColor = Color.White,
                             ) { uriHandler.openUri("https://bsky.app/profile/hamzabellouch.bsky.social") }
 
-                            9 -> PreferencesHintCard(
+                            10 -> PreferencesHintCard(
                                 title = stringResource(id = R.string.telegram_channel),
                                 icon = painterResource(id = R.drawable.icons8_telegram_app),
                                 description = stringResource(id = R.string.telegram_channel_desc),
@@ -1046,7 +1216,7 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        repeat(10) { pageIndex ->
+                        repeat(11) { pageIndex ->
                             val isSelected = pagerState.currentPage == pageIndex
                             Box(
                                 modifier = Modifier
@@ -1073,7 +1243,45 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
                         icon = Icons.AutoMirrored.Outlined.OpenInNew,
                         onClick = { uriHandler.openUri("https://github.com/hamzabellouch/gallery/issues") },
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 16.dp, bottom = 14.dp, top = 4.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable(
+                                    role = Role.Button,
+                                    onClick = { showReportDialog = true }
+                                )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .height(36.dp)
+                                    .padding(horizontal = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = CustomIcons.Report,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = stringResource(R.string.problem_report),
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1118,6 +1326,87 @@ fun TroubleShootingPage(onNavigateBack: () -> Unit) {
             text = { Text(text = stringResource(R.string.contact_developer_confirm)) },
         )
     }
+
+    if (showReportDialog) {
+        AlertDialog(
+            onDismissRequest = { showReportDialog = false },
+            icon = {
+                Icon(
+                    imageVector = CustomIcons.Report,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = stringResource(R.string.problem_report),
+                    style = MaterialTheme.typography.headlineSmall,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = stringResource(R.string.problem_report_dialog_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable(
+                                role = Role.Button,
+                                onClick = {
+                                    showReportDialog = false
+                                    uriHandler.openUri(reportProblemFormUrl)
+                                }
+                            )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = CustomIcons.Report,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = stringResource(R.string.open_report_form),
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                OutlinedButtonWithIcon(
+                    icon = Icons.Outlined.Cancel,
+                    text = stringResource(id = R.string.cancel),
+                    onClick = { showReportDialog = false },
+                )
+            }
+        )
+    }
 }
 
 /* ---------------- AboutPage ---------------- */
@@ -1142,6 +1431,16 @@ fun AboutPage(
     val prefs = remember { context.getSharedPreferences("gallery_prefs", android.content.Context.MODE_PRIVATE) }
     var isAutoUpdateEnabled by remember {
         mutableStateOf(prefs.getBoolean("auto_update_enabled", false))
+    }
+
+    var showWhatsNewDialog by remember { mutableStateOf(false) }
+
+    // فحص ما إذا كان الزر مخفياً مؤقتاً (لم تمر 24 ساعة بعد)
+    val whatsNewDismissedUntil = remember {
+        prefs.getLong("whats_new_dismissed_until", 0L)
+    }
+    var isWhatsNewDismissed by remember {
+        mutableStateOf(System.currentTimeMillis() < whatsNewDismissedUntil)
     }
 
     val versionName = try {
@@ -1169,8 +1468,71 @@ fun AboutPage(
                         Text(modifier = Modifier, text = stringResource(id = R.string.about), color = MaterialTheme.colorScheme.onBackground)
                     },
                     navigationIcon = { BackButton { onNavigateBack() } },
+                    actions = {
+                        if (!isWhatsNewDismissed) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                modifier = Modifier
+                                    .padding(end = 12.dp)
+                                    .clip(CircleShape)
+                            ) {
+                                Row(
+                                    modifier = Modifier.height(36.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // الجزء الأيسر: الأيقونة + النص (عند الضغط يفتح النافذة)
+                                    Row(
+                                        modifier = Modifier
+                                            .clickable(
+                                                role = Role.Button,
+                                                onClick = { onNavigateToUpdatePage() }
+                                            )
+                                            .padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = CustomIcons.LocalFireDepartment,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.whats_new),
+                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                    }
+
+                                    // الجزء الأيمن: زر 'X' لإخفاء الكبسولة لمدة 24 ساعة
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(end = 6.dp)
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .clickable(
+                                                role = Role.Button,
+                                                onClick = {
+                                                    val dismissUntil = System.currentTimeMillis() + 24 * 60 * 60 * 1000L
+                                                    prefs.edit().putLong("whats_new_dismissed_until", dismissUntil).apply()
+                                                    isWhatsNewDismissed = true
+                                                }
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = stringResource(R.string.close),
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
                     scrollBehavior = scrollBehavior,
-                    windowInsets = WindowInsets(0.dp),
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
                         scrolledContainerColor = MaterialTheme.colorScheme.background,
@@ -1250,6 +1612,15 @@ fun AboutPage(
                             prefs.edit().putBoolean("auto_update_enabled", isAutoUpdateEnabled).apply()
                         },
                     )
+                }
+                item {
+                    PreferenceItem(
+                        title = stringResource(R.string.privacy_policy),
+                        description = stringResource(R.string.privacy_policy_desc),
+                        icon = CustomIcons.Policy,
+                    ) {
+                        openUrl("https://github.com/hamzabellouch/gallery/blob/main/PRIVACY_POLICY.md")
+                    }
                 }
                 item {
                     PreferenceItem(

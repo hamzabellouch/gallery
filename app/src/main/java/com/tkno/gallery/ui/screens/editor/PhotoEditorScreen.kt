@@ -31,6 +31,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -46,9 +47,16 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.tkno.gallery.data.model.MediaItem
+import com.tkno.gallery.ui.components.CustomIcons
 import com.tkno.gallery.util.FilterType
 import com.tkno.gallery.util.ImageFilterUtils
 import kotlinx.coroutines.launch
+
+private data class PhotoEditorHistoryState(
+    val rotationAngle: Float = 0f,
+    val selectedFilter: FilterType = FilterType.NONE,
+    val cropRectNormalized: RectF? = null
+)
 
 @Composable
 fun PhotoEditorScreen(
@@ -59,9 +67,37 @@ fun PhotoEditorScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var rotationAngle by remember { mutableFloatStateOf(0f) }
-    var selectedFilter by remember { mutableStateOf(FilterType.NONE) }
-    var cropRectNormalized by remember { mutableStateOf<RectF?>(null) }
+    val history = remember { mutableStateListOf(PhotoEditorHistoryState()) }
+    var historyIndex by remember { mutableIntStateOf(0) }
+
+    val currentState = history.getOrElse(historyIndex) { PhotoEditorHistoryState() }
+    val rotationAngle = currentState.rotationAngle
+    val selectedFilter = currentState.selectedFilter
+    val cropRectNormalized = currentState.cropRectNormalized
+
+    val canUndo = historyIndex > 0
+    val canRedo = historyIndex < history.size - 1
+
+    fun pushState(newState: PhotoEditorHistoryState) {
+        if (newState == currentState) return
+        while (history.size > historyIndex + 1) {
+            history.removeAt(history.size - 1)
+        }
+        history.add(newState)
+        historyIndex = history.size - 1
+    }
+
+    fun undo() {
+        if (canUndo) {
+            historyIndex--
+        }
+    }
+
+    fun redo() {
+        if (canRedo) {
+            historyIndex++
+        }
+    }
 
     var isCropMode by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
@@ -81,13 +117,65 @@ fun PhotoEditorScreen(
         label = "rotationAnimation"
     )
 
-    var canvasSize by remember { mutableStateOf(Size.Zero) }
-    var imageIntrinsicSize by remember {
-        mutableStateOf(
-            if (mediaItem.width > 0 && mediaItem.height > 0)
-                Size(mediaItem.width.toFloat(), mediaItem.height.toFloat())
-            else Size.Zero
+    // Sampled high-res bitmap for main editor & crop tool
+    var editorBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(mediaItem.uri) {
+        editorBitmap = ImageFilterUtils.decodeSampledBitmapFromUri(
+            context = context,
+            uri = mediaItem.uri,
+            reqWidth = 2048,
+            reqHeight = 2048
         )
+    }
+
+    // Sampled small thumbnail for filter preview chips
+    var previewThumbnailBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(mediaItem.uri) {
+        previewThumbnailBitmap = ImageFilterUtils.decodeSampledBitmapFromUri(
+            context = context,
+            uri = mediaItem.uri,
+            reqWidth = 140,
+            reqHeight = 140
+        )
+    }
+
+    // Cropped sub-bitmap for main screen preview if crop is applied
+    val displayBitmap = remember(editorBitmap, cropRectNormalized) {
+        val bmp = editorBitmap
+        val crop = cropRectNormalized
+        if (bmp == null) null
+        else if (crop == null) bmp
+        else {
+            val left = (crop.left.coerceIn(0f, 1f) * bmp.width).toInt()
+            val top = (crop.top.coerceIn(0f, 1f) * bmp.height).toInt()
+            val right = (crop.right.coerceIn(0f, 1f) * bmp.width).toInt()
+            val bottom = (crop.bottom.coerceIn(0f, 1f) * bmp.height).toInt()
+            val w = (right - left).coerceAtLeast(1).coerceAtMost(bmp.width - left)
+            val h = (bottom - top).coerceAtLeast(1).coerceAtMost(bmp.height - top)
+            Bitmap.createBitmap(bmp, left, top, w, h)
+        }
+    }
+
+    val uncroppedIntrinsicSize = remember(editorBitmap, mediaItem) {
+        val bmp = editorBitmap
+        if (bmp != null) {
+            Size(bmp.width.toFloat(), bmp.height.toFloat())
+        } else if (mediaItem.width > 0 && mediaItem.height > 0) {
+            Size(mediaItem.width.toFloat(), mediaItem.height.toFloat())
+        } else {
+            Size.Zero
+        }
+    }
+
+    var canvasSize by remember { mutableStateOf(Size.Zero) }
+    val imageIntrinsicSize = remember(displayBitmap, mediaItem) {
+        if (displayBitmap != null) {
+            Size(displayBitmap.width.toFloat(), displayBitmap.height.toFloat())
+        } else if (mediaItem.width > 0 && mediaItem.height > 0) {
+            Size(mediaItem.width.toFloat(), mediaItem.height.toFloat())
+        } else {
+            Size.Zero
+        }
     }
 
     val targetScale by remember(canvasSize, imageIntrinsicSize, rotationAngle) {
@@ -129,17 +217,6 @@ fun PhotoEditorScreen(
         label = "scaleAnimation"
     )
 
-    // Load sample thumbnail bitmap for filter previews
-    var previewThumbnailBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(mediaItem.uri) {
-        previewThumbnailBitmap = ImageFilterUtils.decodeSampledBitmapFromUri(
-            context = context,
-            uri = mediaItem.uri,
-            reqWidth = 140,
-            reqHeight = 140
-        )
-    }
-
     BackHandler {
         if (isCropMode) {
             isCropMode = false
@@ -177,36 +254,49 @@ fun PhotoEditorScreen(
                     val composeMatrix = selectedFilter.getComposeColorMatrix()
                     val colorFilter = composeMatrix?.let { ColorFilter.colorMatrix(it) }
 
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(mediaItem.uri)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = "Editing Image",
-                        onSuccess = { state ->
-                            val painter = state.painter
-                            if (painter.intrinsicSize.width > 0 && painter.intrinsicSize.height > 0) {
-                                imageIntrinsicSize = painter.intrinsicSize
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                rotationZ = animatedRotation
-                                scaleX = animatedScale
-                                scaleY = animatedScale
-                            },
-                        colorFilter = colorFilter,
-                        contentScale = ContentScale.Fit
-                    )
+                    if (displayBitmap != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = displayBitmap.asImageBitmap(),
+                            contentDescription = "Editing Image",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    rotationZ = animatedRotation
+                                    scaleX = animatedScale
+                                    scaleY = animatedScale
+                                },
+                            colorFilter = colorFilter,
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(mediaItem.uri)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "Editing Image",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    rotationZ = animatedRotation
+                                    scaleX = animatedScale
+                                    scaleY = animatedScale
+                                },
+                            colorFilter = colorFilter,
+                            contentScale = ContentScale.Fit
+                        )
+                    }
                 } else {
                     // Interactive Crop View Overlay
                     CropOverlayView(
                         imageUri = mediaItem.uri,
+                        imageBitmap = editorBitmap,
+                        initialImageIntrinsicSize = uncroppedIntrinsicSize,
                         rotationAngle = rotationAngle,
+                        selectedFilter = selectedFilter,
                         initialCropRect = cropRectNormalized,
                         onCropApplied = { newCrop ->
-                            cropRectNormalized = newCrop
+                            pushState(currentState.copy(cropRectNormalized = newCrop))
                             isCropMode = false
                         },
                         onCancelCrop = {
@@ -217,19 +307,20 @@ fun PhotoEditorScreen(
             }
 
             if (!isCropMode) {
-                // Action Buttons (Rotate & Crop) - Pill Row
+                // Action Buttons Row: Rotate Capsule, Crop Capsule, Undo Circle, Redo Circle
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Rotate Button
+                    // Rotate Button (Capsule Shape)
                     Surface(
                         onClick = {
-                            rotationAngle = (rotationAngle - 90f) % 360f
+                            pushState(currentState.copy(rotationAngle = rotationAngle - 90f))
                         },
-                        shape = RoundedCornerShape(16.dp),
+                        shape = CircleShape,
                         color = Color(0xFF1E1E1E),
                         modifier = Modifier
                             .weight(1f)
@@ -244,24 +335,24 @@ fun PhotoEditorScreen(
                                 imageVector = Icons.AutoMirrored.Filled.RotateLeft,
                                 contentDescription = "Rotate",
                                 tint = Color.White,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(20.dp)
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Rotate",
                                 color = Color.White,
-                                fontSize = 15.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
 
-                    // Crop Button
+                    // Crop Button (Capsule Shape)
                     Surface(
                         onClick = {
                             isCropMode = true
                         },
-                        shape = RoundedCornerShape(16.dp),
+                        shape = CircleShape,
                         color = Color(0xFF1E1E1E),
                         modifier = Modifier
                             .weight(1f)
@@ -276,14 +367,56 @@ fun PhotoEditorScreen(
                                 imageVector = Icons.Filled.Crop,
                                 contentDescription = "Crop",
                                 tint = Color.White,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(20.dp)
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Crop",
                                 color = Color.White,
-                                fontSize = 15.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    // Undo Button (Circle Shape, Height = 52.dp)
+                    Surface(
+                        onClick = { undo() },
+                        enabled = canUndo,
+                        shape = CircleShape,
+                        color = Color(0xFF1E1E1E),
+                        modifier = Modifier.size(52.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                imageVector = CustomIcons.Undo,
+                                contentDescription = "Undo",
+                                tint = if (canUndo) Color.White else Color.White.copy(alpha = 0.3f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    // Redo Button (Circle Shape, Height = 52.dp)
+                    Surface(
+                        onClick = { redo() },
+                        enabled = canRedo,
+                        shape = CircleShape,
+                        color = Color(0xFF1E1E1E),
+                        modifier = Modifier.size(52.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                imageVector = CustomIcons.Redo,
+                                contentDescription = "Redo",
+                                tint = if (canRedo) Color.White else Color.White.copy(alpha = 0.3f),
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
@@ -307,7 +440,9 @@ fun PhotoEditorScreen(
                             isSelected = (selectedFilter == filter),
                             previewBitmap = previewThumbnailBitmap,
                             imageUri = mediaItem.uri,
-                            onClick = { selectedFilter = filter }
+                            onClick = {
+                                pushState(currentState.copy(selectedFilter = filter))
+                            }
                         )
 
                         // Vertical separator after Vivid (between index 1 and 2)
@@ -405,7 +540,7 @@ fun PhotoEditorScreen(
             }
         }
 
-        // Discard Changes Dialog (Exact match to Screenshot 2)
+        // Discard Changes Dialog
         if (showDiscardDialog) {
             DiscardChangesDialog(
                 onKeepEditing = { showDiscardDialog = false },
@@ -535,10 +670,10 @@ private fun DiscardChangesDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Keep Editing button
+                    // Keep Editing button (Capsule Shape)
                     Surface(
                         onClick = onKeepEditing,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = CircleShape,
                         color = Color(0xFF383A42),
                         modifier = Modifier
                             .weight(1f)
@@ -554,10 +689,10 @@ private fun DiscardChangesDialog(
                         }
                     }
 
-                    // Discard button
+                    // Discard button (Capsule Shape)
                     Surface(
                         onClick = onDiscard,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = CircleShape,
                         color = Color(0xFFA8C7FA),
                         modifier = Modifier
                             .weight(1f)
@@ -578,17 +713,67 @@ private fun DiscardChangesDialog(
     }
 }
 
+private enum class CropDragHandle {
+    NONE,
+    TOP_LEFT,
+    TOP_RIGHT,
+    BOTTOM_LEFT,
+    BOTTOM_RIGHT,
+    EDGE_TOP,
+    EDGE_BOTTOM,
+    EDGE_LEFT,
+    EDGE_RIGHT,
+    CENTER
+}
+
 @Composable
 private fun CropOverlayView(
     imageUri: Uri,
+    imageBitmap: Bitmap?,
+    initialImageIntrinsicSize: Size,
     rotationAngle: Float,
+    selectedFilter: FilterType,
     initialCropRect: RectF?,
-    onCropApplied: (RectF) -> Unit,
+    onCropApplied: (RectF?) -> Unit,
     onCancelCrop: () -> Unit
 ) {
     val context = LocalContext.current
     var containerSize by remember { mutableStateOf(Size.Zero) }
-    var imageIntrinsicSize by remember { mutableStateOf(Size.Zero) }
+    var imageIntrinsicSize by remember(initialImageIntrinsicSize, imageBitmap) {
+        mutableStateOf(
+            if (initialImageIntrinsicSize.width > 0f && initialImageIntrinsicSize.height > 0f) {
+                initialImageIntrinsicSize
+            } else if (imageBitmap != null && imageBitmap.width > 0 && imageBitmap.height > 0) {
+                Size(imageBitmap.width.toFloat(), imageBitmap.height.toFloat())
+            } else {
+                Size.Zero
+            }
+        )
+    }
+
+    LaunchedEffect(initialImageIntrinsicSize, imageBitmap) {
+        if (initialImageIntrinsicSize.width > 0f && initialImageIntrinsicSize.height > 0f) {
+            imageIntrinsicSize = initialImageIntrinsicSize
+        } else if (imageBitmap != null && imageBitmap.width > 0 && imageBitmap.height > 0) {
+            imageIntrinsicSize = Size(imageBitmap.width.toFloat(), imageBitmap.height.toFloat())
+        }
+    }
+
+    val composeMatrix = remember(selectedFilter) { selectedFilter.getComposeColorMatrix() }
+    val colorFilter = remember(composeMatrix) {
+        composeMatrix?.let { ColorFilter.colorMatrix(it) }
+    }
+
+    // Normalized rotation
+    val normalizedRotation = ((rotationAngle % 360f) + 360f) % 360f
+    val is90or270 = normalizedRotation == 90f || normalizedRotation == 270f
+
+    val rawW = imageIntrinsicSize.width.takeIf { it > 0f }
+        ?: (if (imageBitmap != null) imageBitmap.width.toFloat() else 1080f)
+    val rawH = imageIntrinsicSize.height.takeIf { it > 0f }
+        ?: (if (imageBitmap != null) imageBitmap.height.toFloat() else 1920f)
+    val orientedW = if (is90or270) rawH else rawW
+    val orientedH = if (is90or270) rawW else rawH
 
     val targetScale by remember(containerSize, imageIntrinsicSize, rotationAngle) {
         derivedStateOf {
@@ -620,13 +805,23 @@ private fun CropOverlayView(
         }
     }
 
-    // Normalized crop rect: left, top, right, bottom in 0f..1f
-    var cropLeft by remember { mutableFloatStateOf(initialCropRect?.left ?: 0.05f) }
-    var cropTop by remember { mutableFloatStateOf(initialCropRect?.top ?: 0.05f) }
-    var cropRight by remember { mutableFloatStateOf(initialCropRect?.right ?: 0.95f) }
-    var cropBottom by remember { mutableFloatStateOf(initialCropRect?.bottom ?: 0.95f) }
+    // Normalized crop rect: left, top, right, bottom in 0f..1f relative to the oriented image
+    // Defaults to 0f, 0f, 1f, 1f (exact full size of original image in Free mode)
+    var cropLeft by remember { mutableFloatStateOf(initialCropRect?.left ?: 0f) }
+    var cropTop by remember { mutableFloatStateOf(initialCropRect?.top ?: 0f) }
+    var cropRight by remember { mutableFloatStateOf(initialCropRect?.right ?: 1f) }
+    var cropBottom by remember { mutableFloatStateOf(initialCropRect?.bottom ?: 1f) }
 
     var selectedAspectRatio by remember { mutableStateOf("Free") }
+
+    // Active drag state
+    var activeHandle by remember { mutableStateOf(CropDragHandle.NONE) }
+    var dragStartLeft by remember { mutableFloatStateOf(0f) }
+    var dragStartTop by remember { mutableFloatStateOf(0f) }
+    var dragStartRight by remember { mutableFloatStateOf(1f) }
+    var dragStartBottom by remember { mutableFloatStateOf(1f) }
+    var accumulatedDx by remember { mutableFloatStateOf(0f) }
+    var accumulatedDy by remember { mutableFloatStateOf(0f) }
 
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -637,112 +832,272 @@ private fun CropOverlayView(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
                 .onGloballyPositioned { coordinates ->
                     containerSize = coordinates.size.toSize()
                 },
             contentAlignment = Alignment.Center
         ) {
-            // Background Image
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(imageUri)
-                    .build(),
-                contentDescription = null,
-                onSuccess = { state ->
-                    val painter = state.painter
-                    if (painter.intrinsicSize.width > 0 && painter.intrinsicSize.height > 0) {
-                        imageIntrinsicSize = painter.intrinsicSize
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        rotationZ = rotationAngle
-                        scaleX = targetScale
-                        scaleY = targetScale
+            // 1. Crisp Vibrant Original Image Layer (100% true colors, hardware accelerated)
+            if (imageBitmap != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = imageBitmap.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            rotationZ = rotationAngle
+                            scaleX = targetScale
+                            scaleY = targetScale
+                        },
+                    colorFilter = colorFilter,
+                    contentScale = ContentScale.Fit
+                )
+            } else {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(imageUri)
+                        .crossfade(false)
+                        .build(),
+                    contentDescription = null,
+                    onSuccess = { state ->
+                        val painter = state.painter
+                        if (painter.intrinsicSize.width > 0 && painter.intrinsicSize.height > 0) {
+                            imageIntrinsicSize = painter.intrinsicSize
+                        }
                     },
-                contentScale = ContentScale.Fit
-            )
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            rotationZ = rotationAngle
+                            scaleX = targetScale
+                            scaleY = targetScale
+                        },
+                    colorFilter = colorFilter,
+                    contentScale = ContentScale.Fit
+                )
+            }
 
-            // Crop Overlay Box & Grid
-            if (containerSize.width > 0 && containerSize.height > 0) {
-                val boxLeft = cropLeft * containerSize.width
-                val boxTop = cropTop * containerSize.height
-                val boxRight = cropRight * containerSize.width
-                val boxBottom = cropBottom * containerSize.height
-                val boxWidth = (boxRight - boxLeft).coerceAtLeast(40f)
-                val boxHeight = (boxBottom - boxTop).coerceAtLeast(40f)
+            // 2. Interactive Crop Overlay Canvas
+            if (containerSize.width > 0f && containerSize.height > 0f) {
+                val cw = containerSize.width
+                val ch = containerSize.height
+
+                val scaleFit = kotlin.math.min(cw / rawW, ch / rawH)
+                val baseW = rawW * scaleFit
+                val baseH = rawH * scaleFit
+
+                val displayedW = (if (is90or270) baseH else baseW) * targetScale
+                val displayedH = (if (is90or270) baseW else baseH) * targetScale
+                val imgLeft = (cw - displayedW) / 2f
+                val imgTop = (ch - displayedH) / 2f
+
+                val boxLeft = imgLeft + cropLeft * displayedW
+                val boxTop = imgTop + cropTop * displayedH
+                val boxRight = imgLeft + cropRight * displayedW
+                val boxBottom = imgTop + cropBottom * displayedH
+                val boxWidth = (boxRight - boxLeft).coerceAtLeast(1f)
+                val boxHeight = (boxBottom - boxTop).coerceAtLeast(1f)
+
+                val currentCropLeft by rememberUpdatedState(cropLeft)
+                val currentCropTop by rememberUpdatedState(cropTop)
+                val currentCropRight by rememberUpdatedState(cropRight)
+                val currentCropBottom by rememberUpdatedState(cropBottom)
+                val currentDisplayedW by rememberUpdatedState(displayedW)
+                val currentDisplayedH by rememberUpdatedState(displayedH)
+                val currentImgLeft by rememberUpdatedState(imgLeft)
+                val currentImgTop by rememberUpdatedState(imgTop)
+
+                val density = LocalDensity.current
+                val cornerTolerance = with(density) { 48.dp.toPx() }
+                val edgeTolerance = with(density) { 36.dp.toPx() }
 
                 androidx.compose.foundation.Canvas(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(containerSize) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                val dx = dragAmount.x / containerSize.width
-                                val dy = dragAmount.y / containerSize.height
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragStart = { offset ->
+                                    val curBoxL = currentImgLeft + currentCropLeft * currentDisplayedW
+                                    val curBoxT = currentImgTop + currentCropTop * currentDisplayedH
+                                    val curBoxR = currentImgLeft + currentCropRight * currentDisplayedW
+                                    val curBoxB = currentImgTop + currentCropBottom * currentDisplayedH
+                                    val x = offset.x
+                                    val y = offset.y
 
-                                val curWidth = cropRight - cropLeft
-                                val curHeight = cropBottom - cropTop
+                                    activeHandle = when {
+                                        // 1. Corners (highest priority)
+                                        kotlin.math.hypot(x - curBoxL, y - curBoxT) <= cornerTolerance -> CropDragHandle.TOP_LEFT
+                                        kotlin.math.hypot(x - curBoxR, y - curBoxT) <= cornerTolerance -> CropDragHandle.TOP_RIGHT
+                                        kotlin.math.hypot(x - curBoxL, y - curBoxB) <= cornerTolerance -> CropDragHandle.BOTTOM_LEFT
+                                        kotlin.math.hypot(x - curBoxR, y - curBoxB) <= cornerTolerance -> CropDragHandle.BOTTOM_RIGHT
 
-                                var newLeft = (cropLeft + dx).coerceIn(0f, 1f - curWidth)
-                                var newTop = (cropTop + dy).coerceIn(0f, 1f - curHeight)
-                                var newRight = newLeft + curWidth
-                                var newBottom = newTop + curHeight
+                                        // 2. Edges
+                                        kotlin.math.abs(y - curBoxT) <= edgeTolerance && x >= curBoxL - edgeTolerance && x <= curBoxR + edgeTolerance -> CropDragHandle.EDGE_TOP
+                                        kotlin.math.abs(y - curBoxB) <= edgeTolerance && x >= curBoxL - edgeTolerance && x <= curBoxR + edgeTolerance -> CropDragHandle.EDGE_BOTTOM
+                                        kotlin.math.abs(x - curBoxL) <= edgeTolerance && y >= curBoxT - edgeTolerance && y <= curBoxB + edgeTolerance -> CropDragHandle.EDGE_LEFT
+                                        kotlin.math.abs(x - curBoxR) <= edgeTolerance && y >= curBoxT - edgeTolerance && y <= curBoxB + edgeTolerance -> CropDragHandle.EDGE_RIGHT
 
-                                cropLeft = newLeft
-                                cropTop = newTop
-                                cropRight = newRight
-                                cropBottom = newBottom
-                            }
+                                        // 3. Center pan
+                                        x in curBoxL..curBoxR && y in curBoxT..curBoxB -> CropDragHandle.CENTER
+
+                                        else -> CropDragHandle.NONE
+                                    }
+
+                                    dragStartLeft = currentCropLeft
+                                    dragStartTop = currentCropTop
+                                    dragStartRight = currentCropRight
+                                    dragStartBottom = currentCropBottom
+                                    accumulatedDx = 0f
+                                    accumulatedDy = 0f
+                                },
+                                onDrag = { change, dragAmount ->
+                                    val dw = currentDisplayedW
+                                    val dh = currentDisplayedH
+                                    if (activeHandle != CropDragHandle.NONE && dw > 0f && dh > 0f) {
+                                        change.consume()
+                                        accumulatedDx += dragAmount.x
+                                        accumulatedDy += dragAmount.y
+
+                                        val totalDx = accumulatedDx / dw
+                                        val totalDy = accumulatedDy / dh
+                                        val minW = (40.dp.toPx() / dw).coerceIn(0.01f, 0.4f)
+                                        val minH = (40.dp.toPx() / dh).coerceIn(0.01f, 0.4f)
+
+                                        when (activeHandle) {
+                                            CropDragHandle.TOP_LEFT -> {
+                                                cropLeft = (dragStartLeft + totalDx).coerceIn(0f, dragStartRight - minW)
+                                                cropTop = (dragStartTop + totalDy).coerceIn(0f, dragStartBottom - minH)
+                                            }
+                                            CropDragHandle.TOP_RIGHT -> {
+                                                cropRight = (dragStartRight + totalDx).coerceIn(dragStartLeft + minW, 1f)
+                                                cropTop = (dragStartTop + totalDy).coerceIn(0f, dragStartBottom - minH)
+                                            }
+                                            CropDragHandle.BOTTOM_LEFT -> {
+                                                cropLeft = (dragStartLeft + totalDx).coerceIn(0f, dragStartRight - minW)
+                                                cropBottom = (dragStartBottom + totalDy).coerceIn(dragStartTop + minH, 1f)
+                                            }
+                                            CropDragHandle.BOTTOM_RIGHT -> {
+                                                cropRight = (dragStartRight + totalDx).coerceIn(dragStartLeft + minW, 1f)
+                                                cropBottom = (dragStartBottom + totalDy).coerceIn(dragStartTop + minH, 1f)
+                                            }
+                                            CropDragHandle.EDGE_TOP -> {
+                                                cropTop = (dragStartTop + totalDy).coerceIn(0f, dragStartBottom - minH)
+                                            }
+                                            CropDragHandle.EDGE_BOTTOM -> {
+                                                cropBottom = (dragStartBottom + totalDy).coerceIn(dragStartTop + minH, 1f)
+                                            }
+                                            CropDragHandle.EDGE_LEFT -> {
+                                                cropLeft = (dragStartLeft + totalDx).coerceIn(0f, dragStartRight - minW)
+                                            }
+                                            CropDragHandle.EDGE_RIGHT -> {
+                                                cropRight = (dragStartRight + totalDx).coerceIn(dragStartLeft + minW, 1f)
+                                            }
+                                            CropDragHandle.CENTER -> {
+                                                val curW = dragStartRight - dragStartLeft
+                                                val curH = dragStartBottom - dragStartTop
+                                                val newL = (dragStartLeft + totalDx).coerceIn(0f, 1f - curW)
+                                                val newT = (dragStartTop + totalDy).coerceIn(0f, 1f - curH)
+                                                cropLeft = newL
+                                                cropRight = newL + curW
+                                                cropTop = newT
+                                                cropBottom = newT + curH
+                                            }
+                                            CropDragHandle.NONE -> {}
+                                        }
+                                    }
+                                },
+                                onDragEnd = { activeHandle = CropDragHandle.NONE },
+                                onDragCancel = { activeHandle = CropDragHandle.NONE }
+                            )
                         }
                 ) {
-                    val overlayPath = Path().apply {
-                        addRect(Rect(0f, 0f, size.width, size.height))
-                        addRect(Rect(boxLeft, boxTop, boxRight, boxBottom))
-                        fillType = PathFillType.EvenOdd
-                    }
-                    drawPath(overlayPath, Color.Black.copy(alpha = 0.55f))
+                    // 1. Semi-transparent dark overlay outside crop box ONLY (Inside crop box is 100% clear and vibrant)
+                    val overlayColor = Color.Black.copy(alpha = 0.58f)
 
-                    // Border of crop window
+                    // Top outer area
+                    if (boxTop > 0f) {
+                        drawRect(
+                            color = overlayColor,
+                            topLeft = Offset(0f, 0f),
+                            size = Size(size.width, boxTop.coerceAtMost(size.height))
+                        )
+                    }
+                    // Bottom outer area
+                    if (boxBottom < size.height) {
+                        drawRect(
+                            color = overlayColor,
+                            topLeft = Offset(0f, boxBottom.coerceAtLeast(0f)),
+                            size = Size(size.width, (size.height - boxBottom).coerceAtLeast(0f))
+                        )
+                    }
+                    // Left outer area (between boxTop and boxBottom)
+                    if (boxLeft > 0f && boxHeight > 0f) {
+                        drawRect(
+                            color = overlayColor,
+                            topLeft = Offset(0f, boxTop.coerceAtLeast(0f)),
+                            size = Size(boxLeft.coerceAtMost(size.width), boxHeight)
+                        )
+                    }
+                    // Right outer area (between boxTop and boxBottom)
+                    if (boxRight < size.width && boxHeight > 0f) {
+                        drawRect(
+                            color = overlayColor,
+                            topLeft = Offset(boxRight.coerceAtLeast(0f), boxTop.coerceAtLeast(0f)),
+                            size = Size((size.width - boxRight).coerceAtLeast(0f), boxHeight)
+                        )
+                    }
+
+                    // 2. Crop Window Outline
                     drawRect(
-                        color = Color.White,
+                        color = Color.White.copy(alpha = 0.9f),
                         topLeft = Offset(boxLeft, boxTop),
                         size = Size(boxWidth, boxHeight),
-                        style = Stroke(width = 2.dp.toPx())
+                        style = Stroke(width = 1.5.dp.toPx())
                     )
 
-                    // Rule of thirds grid lines
+                    // 3. Rule of thirds grid lines
                     val oneThirdW = boxWidth / 3f
                     val oneThirdH = boxHeight / 3f
 
                     // Verticals
-                    drawLine(Color.White.copy(alpha = 0.4f), Offset(boxLeft + oneThirdW, boxTop), Offset(boxLeft + oneThirdW, boxBottom), strokeWidth = 1.dp.toPx())
-                    drawLine(Color.White.copy(alpha = 0.4f), Offset(boxLeft + 2 * oneThirdW, boxTop), Offset(boxLeft + 2 * oneThirdW, boxBottom), strokeWidth = 1.dp.toPx())
+                    drawLine(Color.White.copy(alpha = 0.35f), Offset(boxLeft + oneThirdW, boxTop), Offset(boxLeft + oneThirdW, boxBottom), strokeWidth = 1.dp.toPx())
+                    drawLine(Color.White.copy(alpha = 0.35f), Offset(boxLeft + 2 * oneThirdW, boxTop), Offset(boxLeft + 2 * oneThirdW, boxBottom), strokeWidth = 1.dp.toPx())
 
                     // Horizontals
-                    drawLine(Color.White.copy(alpha = 0.4f), Offset(boxLeft, boxTop + oneThirdH), Offset(boxRight, boxTop + oneThirdH), strokeWidth = 1.dp.toPx())
-                    drawLine(Color.White.copy(alpha = 0.4f), Offset(boxLeft, boxTop + 2 * oneThirdH), Offset(boxRight, boxTop + 2 * oneThirdH), strokeWidth = 1.dp.toPx())
+                    drawLine(Color.White.copy(alpha = 0.35f), Offset(boxLeft, boxTop + oneThirdH), Offset(boxRight, boxTop + oneThirdH), strokeWidth = 1.dp.toPx())
+                    drawLine(Color.White.copy(alpha = 0.35f), Offset(boxLeft, boxTop + 2 * oneThirdH), Offset(boxRight, boxTop + 2 * oneThirdH), strokeWidth = 1.dp.toPx())
 
-                    // Corner indicators
-                    val cornerLen = 18.dp.toPx()
+                    // 4. Corner L-Brackets
+                    val cornerLen = 22.dp.toPx()
                     val cornerStroke = 3.5.dp.toPx()
 
                     // Top-Left
-                    drawLine(Color.White, Offset(boxLeft, boxTop), Offset(boxLeft + cornerLen, boxTop), cornerStroke)
-                    drawLine(Color.White, Offset(boxLeft, boxTop), Offset(boxLeft, boxTop + cornerLen), cornerStroke)
+                    drawLine(Color.White, Offset(boxLeft - 1.dp.toPx(), boxTop), Offset(boxLeft + cornerLen, boxTop), cornerStroke)
+                    drawLine(Color.White, Offset(boxLeft, boxTop - 1.dp.toPx()), Offset(boxLeft, boxTop + cornerLen), cornerStroke)
 
                     // Top-Right
-                    drawLine(Color.White, Offset(boxRight, boxTop), Offset(boxRight - cornerLen, boxTop), cornerStroke)
-                    drawLine(Color.White, Offset(boxRight, boxTop), Offset(boxRight, boxTop + cornerLen), cornerStroke)
+                    drawLine(Color.White, Offset(boxRight + 1.dp.toPx(), boxTop), Offset(boxRight - cornerLen, boxTop), cornerStroke)
+                    drawLine(Color.White, Offset(boxRight, boxTop - 1.dp.toPx()), Offset(boxRight, boxTop + cornerLen), cornerStroke)
 
                     // Bottom-Left
-                    drawLine(Color.White, Offset(boxLeft, boxBottom), Offset(boxLeft + cornerLen, boxBottom), cornerStroke)
-                    drawLine(Color.White, Offset(boxLeft, boxBottom), Offset(boxLeft, boxBottom - cornerLen), cornerStroke)
+                    drawLine(Color.White, Offset(boxLeft - 1.dp.toPx(), boxBottom), Offset(boxLeft + cornerLen, boxBottom), cornerStroke)
+                    drawLine(Color.White, Offset(boxLeft, boxBottom + 1.dp.toPx()), Offset(boxLeft, boxBottom - cornerLen), cornerStroke)
 
                     // Bottom-Right
-                    drawLine(Color.White, Offset(boxRight, boxBottom), Offset(boxRight - cornerLen, boxBottom), cornerStroke)
-                    drawLine(Color.White, Offset(boxRight, boxBottom), Offset(boxRight, boxBottom - cornerLen), cornerStroke)
+                    drawLine(Color.White, Offset(boxRight + 1.dp.toPx(), boxBottom), Offset(boxRight - cornerLen, boxBottom), cornerStroke)
+                    drawLine(Color.White, Offset(boxRight, boxBottom - 1.dp.toPx()), Offset(boxRight, boxBottom - cornerLen), cornerStroke)
+
+                    // 5. Edge Midpoint Handles
+                    val handleLen = 18.dp.toPx()
+                    val handleStroke = 2.5.dp.toPx()
+                    val midX = (boxLeft + boxRight) / 2f
+                    val midY = (boxTop + boxBottom) / 2f
+
+                    drawLine(Color.White, Offset(midX - handleLen / 2f, boxTop), Offset(midX + handleLen / 2f, boxTop), handleStroke)
+                    drawLine(Color.White, Offset(midX - handleLen / 2f, boxBottom), Offset(midX + handleLen / 2f, boxBottom), handleStroke)
+                    drawLine(Color.White, Offset(boxLeft, midY - handleLen / 2f), Offset(boxLeft, midY + handleLen / 2f), handleStroke)
+                    drawLine(Color.White, Offset(boxRight, midY - handleLen / 2f), Offset(boxRight, midY + handleLen / 2f), handleStroke)
                 }
             }
         }
@@ -755,29 +1110,44 @@ private fun CropOverlayView(
                 .padding(horizontal = 16.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            val ratios = listOf("Free", "1:1", "4:3", "3:4", "16:9", "9:16")
+            val ratios = listOf("Free", "Original", "1:1", "4:3", "3:4", "16:9", "9:16")
             ratios.forEach { ratio ->
                 val isSelected = selectedAspectRatio == ratio
                 FilterChip(
                     selected = isSelected,
                     onClick = {
                         selectedAspectRatio = ratio
-                        when (ratio) {
-                            "Free" -> {
-                                cropLeft = 0.05f; cropTop = 0.05f; cropRight = 0.95f; cropBottom = 0.95f
+                        val imgRatio = if (orientedH > 0f) orientedW / orientedH else 1f
+                        val targetRatio: Float? = when (ratio) {
+                            "Free" -> null
+                            "Original" -> imgRatio
+                            "1:1" -> 1f
+                            "4:3" -> 4f / 3f
+                            "3:4" -> 3f / 4f
+                            "16:9" -> 16f / 9f
+                            "9:16" -> 9f / 16f
+                            else -> null
+                        }
+
+                        if (targetRatio == null) {
+                            // Free: reset to full original image size
+                            cropLeft = 0f
+                            cropTop = 0f
+                            cropRight = 1f
+                            cropBottom = 1f
+                        } else {
+                            val rNorm = targetRatio / imgRatio
+                            val (normW, normH) = if (rNorm <= 1f) {
+                                rNorm to 1f
+                            } else {
+                                1f to (1f / rNorm)
                             }
-                            "1:1" -> {
-                                cropLeft = 0.15f; cropTop = 0.2f; cropRight = 0.85f; cropBottom = 0.85f
-                            }
-                            "4:3" -> {
-                                cropLeft = 0.1f; cropTop = 0.2f; cropRight = 0.9f; cropBottom = 0.8f
-                            }
-                            "16:9" -> {
-                                cropLeft = 0.05f; cropTop = 0.25f; cropRight = 0.95f; cropBottom = 0.75f
-                            }
-                            "9:16" -> {
-                                cropLeft = 0.2f; cropTop = 0.05f; cropRight = 0.8f; cropBottom = 0.95f
-                            }
+                            val newLeft = (1f - normW) / 2f
+                            val newTop = (1f - normH) / 2f
+                            cropLeft = newLeft.coerceIn(0f, 1f)
+                            cropTop = newTop.coerceIn(0f, 1f)
+                            cropRight = (newLeft + normW).coerceIn(0f, 1f)
+                            cropBottom = (newTop + normH).coerceIn(0f, 1f)
                         }
                     },
                     label = { Text(ratio, fontSize = 13.sp) },
@@ -810,7 +1180,12 @@ private fun CropOverlayView(
 
             IconButton(
                 onClick = {
-                    onCropApplied(RectF(cropLeft, cropTop, cropRight, cropBottom))
+                    val isFull = cropLeft <= 0.001f && cropTop <= 0.001f && cropRight >= 0.999f && cropBottom >= 0.999f
+                    if (isFull) {
+                        onCropApplied(null)
+                    } else {
+                        onCropApplied(RectF(cropLeft, cropTop, cropRight, cropBottom))
+                    }
                 }
             ) {
                 Icon(

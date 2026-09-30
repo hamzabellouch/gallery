@@ -26,7 +26,7 @@ class GalleryApplication : App(), SingletonImageLoader.Factory {
 
                 // 2. Standalone decoders for Video Thumbnails fallback, Animated GIFs, SVGs
                 add(VideoFrameDecoder.Factory())
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     add(AnimatedImageDecoder.Factory())
                 } else {
                     add(GifDecoder.Factory())

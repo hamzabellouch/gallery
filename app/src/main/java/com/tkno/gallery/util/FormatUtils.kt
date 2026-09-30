@@ -12,6 +12,11 @@ import kotlin.math.pow
 
 object FormatUtils {
 
+    @Volatile
+    private var cachedZoneId: ZoneId = ZoneId.systemDefault()
+
+    fun getZoneId(): ZoneId = cachedZoneId
+
     private val headerDateFormatter = DateTimeFormatter.ofPattern("MMMM d, y", Locale.getDefault())
     private val monthHeaderFormatter = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())
     private val yearHeaderFormatter = DateTimeFormatter.ofPattern("yyyy", Locale.getDefault())
@@ -55,7 +60,7 @@ object FormatUtils {
         if (timestampSec == 0L) return "Unknown Date"
         val clampedSec = timestampSec.coerceIn(MIN_YEAR_1_SEC, MAX_YEAR_1_BILLION_SEC)
         return try {
-            val localDate = Instant.ofEpochSecond(clampedSec).atZone(ZoneId.systemDefault()).toLocalDate()
+            val localDate = Instant.ofEpochSecond(clampedSec).atZone(cachedZoneId).toLocalDate()
             val dayKey = localDate.toEpochDay()
             dateHeaderCache.getOrPut(dayKey) {
                 localDate.format(headerDateFormatter)
@@ -102,7 +107,7 @@ object FormatUtils {
         if (timestampSec == 0L) return "Unknown Date"
         val clampedSec = timestampSec.coerceIn(MIN_YEAR_1_SEC, MAX_YEAR_1_BILLION_SEC)
         return try {
-            val localDate = Instant.ofEpochSecond(clampedSec).atZone(ZoneId.systemDefault()).toLocalDate()
+            val localDate = Instant.ofEpochSecond(clampedSec).atZone(cachedZoneId).toLocalDate()
             val monthKey = localDate.year * 100L + localDate.monthValue
             dateMonthHeaderCache.getOrPut(monthKey) {
                 localDate.format(monthHeaderFormatter)
@@ -116,7 +121,7 @@ object FormatUtils {
         if (timestampSec == 0L) return "Unknown Date"
         val clampedSec = timestampSec.coerceIn(MIN_YEAR_1_SEC, MAX_YEAR_1_BILLION_SEC)
         return try {
-            val localDate = Instant.ofEpochSecond(clampedSec).atZone(ZoneId.systemDefault()).toLocalDate()
+            val localDate = Instant.ofEpochSecond(clampedSec).atZone(cachedZoneId).toLocalDate()
             val yearKey = localDate.year.toLong()
             dateYearHeaderCache.getOrPut(yearKey) {
                 localDate.format(yearHeaderFormatter)
@@ -130,7 +135,7 @@ object FormatUtils {
         if (timestampSec == 0L) return ""
         val clampedSec = timestampSec.coerceIn(MIN_YEAR_1_SEC, MAX_YEAR_1_BILLION_SEC)
         return try {
-            val localDate = Instant.ofEpochSecond(clampedSec).atZone(ZoneId.systemDefault()).toLocalDate()
+            val localDate = Instant.ofEpochSecond(clampedSec).atZone(cachedZoneId).toLocalDate()
             val monthKey = localDate.year * 100L + localDate.monthValue
             dateMonthYearCache.getOrPut(monthKey) {
                 localDate.format(monthYearFormatter)

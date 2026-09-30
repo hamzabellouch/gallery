@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -24,22 +26,29 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import androidx.core.app.PictureInPictureModeChangedInfo
 import androidx.core.util.Consumer
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.tkno.gallery.data.model.MediaItem
 import com.tkno.gallery.ui.components.CustomIcons
 import com.tkno.gallery.ui.screens.player.VideoPlayerScreen
@@ -73,6 +82,7 @@ fun MediaPagerScreen(
     mediaItems: List<MediaItem>,
     initialIndex: Int,
     onBackClick: () -> Unit,
+    onCurrentItemChanged: ((MediaItem) -> Unit)? = null,
     onToggleFavorite: ((MediaItem) -> Unit)? = null,
     onDeleteMediaItem: ((MediaItem) -> Unit)? = null,
     onEditClick: ((MediaItem) -> Unit)? = null,
@@ -80,14 +90,58 @@ fun MediaPagerScreen(
     animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
     if (mediaItems.isEmpty()) {
-        LaunchedEffect(Unit) { onBackClick() }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
         return
     }
 
-    val startIndex = initialIndex.coerceIn(0, mediaItems.lastIndex)
+    // Intercept system back button / gesture to consistently execute onBackClick
+    BackHandler {
+        onBackClick()
+    }
+
+    val startIndex = initialIndex.coerceIn(0, (mediaItems.size - 1).coerceAtLeast(0))
     val pagerState = rememberPagerState(initialPage = startIndex, pageCount = { mediaItems.size })
+
+    // Keep pager synchronized if initialIndex changes externally
+    LaunchedEffect(initialIndex) {
+        val target = initialIndex.coerceIn(0, (mediaItems.size - 1).coerceAtLeast(0))
+        if (mediaItems.isNotEmpty() && pagerState.currentPage != target) {
+            try {
+                pagerState.scrollToPage(target)
+            } catch (_: Throwable) {}
+        }
+    }
+
+    LaunchedEffect(pagerState.currentPage, mediaItems) {
+        val current = mediaItems.getOrNull(pagerState.currentPage)
+        if (current != null) {
+            onCurrentItemChanged?.invoke(current)
+        }
+    }
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() as? ComponentActivity }
+
+    val prefs = remember(context) { context.getSharedPreferences("gallery_prefs", Context.MODE_PRIVATE) }
+    var useClassicViewerBar by remember { mutableStateOf(prefs.getBoolean("classic_viewer_bar", false)) }
+
+    DisposableEffect(prefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            if (key == "classic_viewer_bar") {
+                useClassicViewerBar = p.getBoolean("classic_viewer_bar", false)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
 
     var pendingDeleteItem by remember { mutableStateOf<MediaItem?>(null) }
 
@@ -138,17 +192,45 @@ fun MediaPagerScreen(
 
     val coroutineScope = rememberCoroutineScope()
     var showBars by remember { mutableStateOf(true) }
+
+    val window = activity?.window
+    val insetsController = remember(window) {
+        window?.let { WindowCompat.getInsetsController(it, it.decorView) }
+    }
+
+    DisposableEffect(showBars, insetsController, isInPipMode) {
+        insetsController?.let { controller ->
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (showBars && !isInPipMode) {
+                controller.show(WindowInsetsCompat.Type.statusBars())
+            } else {
+                controller.hide(WindowInsetsCompat.Type.statusBars())
+            }
+        }
+        onDispose {
+            insetsController?.show(WindowInsetsCompat.Type.statusBars())
+        }
+    }
+
     var showExifSheet by remember { mutableStateOf(false) }
     var exifData by remember { mutableStateOf<ExifData?>(null) }
     var isZoomedIn by remember { mutableStateOf(false) }
     var resetZoomTrigger by remember { mutableIntStateOf(0) }
+    var captureFrameTrigger by remember { mutableIntStateOf(0) }
 
     val currentItem = mediaItems.getOrNull(pagerState.currentPage)
         ?: mediaItems.getOrNull(startIndex)
         ?: mediaItems.lastOrNull()
 
     if (currentItem == null) {
-        LaunchedEffect(Unit) { onBackClick() }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
         return
     }
 
@@ -183,7 +265,9 @@ fun MediaPagerScreen(
 
     LaunchedEffect(currentItem.uri) {
         if (!currentItem.isVideo) {
-            exifData = ExifUtils.readExif(context, currentItem.uri)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                exifData = ExifUtils.readExif(context, currentItem.uri)
+            }
         } else {
             exifData = null
         }
@@ -200,13 +284,13 @@ fun MediaPagerScreen(
             beyondViewportPageCount = 1,
             modifier = Modifier.fillMaxSize(),
             pageSpacing = 16.dp,
-            key = { index -> mediaItems[index].id }
+            key = { index -> mediaItems.getOrNull(index)?.uri?.toString() ?: index.toString() }
         ) { page ->
             val item = mediaItems[page]
             val isCurrentPage = (pagerState.currentPage == page)
 
             var pageModifier = Modifier.fillMaxSize()
-            if (isCurrentPage && sharedTransitionScope != null && animatedVisibilityScope != null) {
+            if (isCurrentPage && sharedTransitionScope != null && animatedVisibilityScope != null && item.id > 0L) {
                 with(sharedTransitionScope) {
                     pageModifier = pageModifier.sharedElement(
                         sharedContentState = rememberSharedContentState(key = "media_${item.id}"),
@@ -244,7 +328,8 @@ fun MediaPagerScreen(
                                         pagerState.animateScrollToPage(page - 1)
                                     }
                                 }
-                            } else null
+                            } else null,
+                            captureFrameTrigger = captureFrameTrigger
                         )
                     } else {
                         Box(
@@ -270,92 +355,172 @@ fun MediaPagerScreen(
             }
         }
 
-        // Floating FitScreen Button for Zoomed Images (Only visible when image is zoomed in)
+        // Top Floating Action Controls (Back Circle & Capsule: FitScreen + Rotate + More)
         AnimatedVisibility(
-            visible = !currentItem.isVideo && isZoomedIn && !isInPipMode,
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut(),
+            visible = showBars && !isInPipMode,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
             modifier = Modifier
-                .align(Alignment.TopEnd)
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(top = 16.dp, end = 16.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            FilledTonalIconButton(
-                onClick = {
-                    resetZoomTrigger++
-                    isZoomedIn = false
-                },
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = Color.Black.copy(alpha = 0.65f),
-                    contentColor = Color.White
-                )
-            ) {
-                Icon(
-                    imageVector = CustomIcons.FitScreen,
-                    contentDescription = "Fit to Screen",
-                    modifier = Modifier.size(22.dp)
-                )
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Back Button in a Circle
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.Black.copy(alpha = 0.5f),
+                        contentColor = Color.White,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        IconButton(
+                            onClick = onBackClick,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                imageVector = CustomIcons.ChevronLeft,
+                                contentDescription = "Back",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    // Capsule containing FitScreen (when zoomed), Rotate, and Three Dots (More)
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.Black.copy(alpha = 0.5f),
+                        contentColor = Color.White,
+                        modifier = Modifier
+                            .height(44.dp)
+                            .animateContentSize(spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        ) {
+                            // FitScreen Button (Only visible when image is zoomed in, placed to the left of Rotate)
+                            AnimatedVisibility(
+                                visible = !currentItem.isVideo && isZoomedIn,
+                                enter = fadeIn() + expandHorizontally(),
+                                exit = fadeOut() + shrinkHorizontally()
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        resetZoomTrigger++
+                                        isZoomedIn = false
+                                    },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = CustomIcons.FitScreen,
+                                        contentDescription = "Fit to Screen",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+
+                            // Capture Video Frame Button (Only visible when current media is video, placed to the left of Rotate)
+                            AnimatedVisibility(
+                                visible = currentItem.isVideo,
+                                enter = fadeIn() + expandHorizontally(),
+                                exit = fadeOut() + shrinkHorizontally()
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        captureFrameTrigger++
+                                    },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = CustomIcons.ScreenshotFrame2,
+                                        contentDescription = "Capture Frame",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+
+                            // Rotate Screen Button
+                            IconButton(
+                                onClick = {
+                                    val act = context.findActivity() ?: return@IconButton
+                                    if (isLandscape) {
+                                        act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                    } else {
+                                        act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                    }
+                                },
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    imageVector = CustomIcons.MobileRotate,
+                                    contentDescription = "Rotate Screen",
+                                    tint = if (isLandscape) MaterialTheme.colorScheme.primary else Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            // Three Dots Button (to be customized later)
+                            IconButton(
+                                onClick = {
+                                    // Three dots action will be customized later
+                                },
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "More Options",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        // Top Action Bar
-        AnimatedVisibility(
-            visible = showBars && !isInPipMode,
-            enter = fadeIn() + slideInVertically(),
-            exit = fadeOut() + slideOutVertically(),
-            modifier = Modifier.align(Alignment.TopCenter)
-        ) {
-            TopAppBar(
-                title = {},
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = CustomIcons.ChevronLeft,
-                            contentDescription = "Back",
-                            tint = Color.White
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            val act = context.findActivity() ?: return@IconButton
-                            if (isLandscape) {
-                                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                            } else {
-                                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = CustomIcons.MobileRotate,
-                            contentDescription = "Rotate Screen",
-                            tint = if (isLandscape) MaterialTheme.colorScheme.primary else Color.White
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Black.copy(alpha = 0.5f)
-                )
-            )
-        }
-
-        // Bottom Action Bar
+        // Bottom Action Bar (Classic or Capsule based on preference)
         AnimatedVisibility(
             visible = showBars && !isInPipMode,
             enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
             exit = fadeOut() + slideOutVertically(targetOffsetY = { it }),
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = if (useClassicViewerBar) {
+                Modifier.align(Alignment.BottomCenter)
+            } else {
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 20.dp, start = 16.dp, end = 16.dp)
+                    .fillMaxWidth()
+            }
         ) {
             Surface(
-                color = Color.Black.copy(alpha = 0.5f),
-                modifier = Modifier.fillMaxWidth()
+                color = if (useClassicViewerBar) Color.Black.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.65f),
+                shape = if (useClassicViewerBar) RoundedCornerShape(0.dp) else CircleShape,
+                contentColor = Color.White,
+                modifier = if (useClassicViewerBar) Modifier.fillMaxWidth() else Modifier.height(64.dp)
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .height(72.dp),
+                    modifier = if (useClassicViewerBar) {
+                        Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .height(72.dp)
+                    } else {
+                        Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 8.dp)
+                    },
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -364,6 +529,7 @@ fun MediaPagerScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                         modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
                             .clickable {
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = currentItem.mimeType
@@ -372,19 +538,19 @@ fun MediaPagerScreen(
                                 }
                                 context.startActivity(Intent.createChooser(shareIntent, "Share Media"))
                             }
-                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .padding(horizontal = if (useClassicViewerBar) 16.dp else 10.dp, vertical = 6.dp)
                     ) {
                         Icon(
                             imageVector = CustomIcons.Share,
                             contentDescription = "Share",
                             tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(if (useClassicViewerBar) 24.dp else 22.dp)
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(if (useClassicViewerBar) 4.dp else 2.dp))
                         Text(
                             text = "Share",
                             color = Color.White,
-                            fontSize = 12.sp
+                            fontSize = if (useClassicViewerBar) 12.sp else 11.sp
                         )
                     }
 
@@ -394,6 +560,7 @@ fun MediaPagerScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                             modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
                                 .clickable { }
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
@@ -401,13 +568,13 @@ fun MediaPagerScreen(
                                 imageVector = CustomIcons.WandStars,
                                 contentDescription = "Auto",
                                 tint = Color.White,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(if (useClassicViewerBar) 24.dp else 22.dp)
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(if (useClassicViewerBar) 4.dp else 2.dp))
                             Text(
                                 text = "Auto",
                                 color = Color.White,
-                                fontSize = 12.sp
+                                fontSize = if (useClassicViewerBar) 12.sp else 11.sp
                             )
                         }
                     }
@@ -418,6 +585,7 @@ fun MediaPagerScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                         modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
                             .clickable { onToggleFavorite?.invoke(currentItem) }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
@@ -425,13 +593,13 @@ fun MediaPagerScreen(
                             imageVector = if (isFav) Icons.Filled.Favorite else CustomIcons.Favorite,
                             contentDescription = if (isFav) "Unfavorite" else "Favorite",
                             tint = if (isFav) Color.Red else Color.White,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(if (useClassicViewerBar) 24.dp else 22.dp)
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(if (useClassicViewerBar) 4.dp else 2.dp))
                         Text(
                             text = if (isFav) "Unfavorite" else "Favorite",
                             color = Color.White,
-                            fontSize = 12.sp
+                            fontSize = if (useClassicViewerBar) 12.sp else 11.sp
                         )
                     }
 
@@ -440,6 +608,7 @@ fun MediaPagerScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                         modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
                             .clickable { onEditClick?.invoke(currentItem) }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
@@ -447,13 +616,13 @@ fun MediaPagerScreen(
                             imageVector = CustomIcons.Edit,
                             contentDescription = "Edit",
                             tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(if (useClassicViewerBar) 24.dp else 22.dp)
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(if (useClassicViewerBar) 4.dp else 2.dp))
                         Text(
                             text = "Edit",
                             color = Color.White,
-                            fontSize = 12.sp
+                            fontSize = if (useClassicViewerBar) 12.sp else 11.sp
                         )
                     }
 
@@ -462,20 +631,21 @@ fun MediaPagerScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                         modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
                             .clickable { deleteCurrentItem() }
-                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .padding(horizontal = if (useClassicViewerBar) 16.dp else 10.dp, vertical = 6.dp)
                     ) {
                         Icon(
                             imageVector = CustomIcons.Delete,
                             contentDescription = "Trash",
                             tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(if (useClassicViewerBar) 24.dp else 22.dp)
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(if (useClassicViewerBar) 4.dp else 2.dp))
                         Text(
                             text = "Trash",
                             color = Color.White,
-                            fontSize = 12.sp
+                            fontSize = if (useClassicViewerBar) 12.sp else 11.sp
                         )
                     }
                 }

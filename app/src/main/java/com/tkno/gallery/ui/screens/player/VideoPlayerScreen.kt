@@ -18,10 +18,12 @@ import android.view.SurfaceView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-import androidx.annotation.OptIn
+import kotlin.OptIn
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -62,6 +65,7 @@ import com.tkno.gallery.R
 import com.tkno.gallery.theme.TaskbarActivePrimaryDark
 import com.tkno.gallery.ui.components.CustomIcons
 import com.tkno.gallery.util.FormatUtils
+import com.tkno.gallery.util.VideoEngineManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -147,7 +151,7 @@ private suspend fun captureAndSaveVideoFrame(
 }
 
 
-@OptIn(UnstableApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VideoPlayerScreen(
     videoUri: Uri,
@@ -157,7 +161,8 @@ fun VideoPlayerScreen(
     onTap: () -> Unit = {},
     onSwipeUp: () -> Unit = {},
     onNextClick: (() -> Unit)? = null,
-    onPreviousClick: (() -> Unit)? = null
+    onPreviousClick: (() -> Unit)? = null,
+    captureFrameTrigger: Int = 0
 ) {
     // Intercept system back button & system back swipe gesture reliably
     BackHandler {
@@ -205,50 +210,28 @@ fun VideoPlayerScreen(
     var isFirstFrameRendered by remember { mutableStateOf(false) }
     val primaryAccent = MaterialTheme.colorScheme.primary
 
-    // MAXIMUM PERFORMANCE STABLE ENGINE: Hardware Accelerated Decoders & Adaptive Dynamic Buffers
-    val exoPlayer: ExoPlayer = remember(videoUri) {
-        com.tkno.gallery.util.VideoEngineManager.init(context)
-        val renderersFactory = com.tkno.gallery.util.VideoEngineManager.renderersFactory
-
-        // Adaptive Dynamic Buffers matching Device Memory Profile
-        val memoryProfile = com.tkno.gallery.util.MemoryManager.getMemoryProfile(context)
-        val (minBufferMs, maxBufferMs) = when (memoryProfile.maxAppMemoryLimitMb) {
-            200 -> Pair(5000, 15000)
-            500 -> Pair(10000, 25000)
-            800 -> Pair(12000, 35000)
-            else -> Pair(15000, 45000)
-        }
-
-        // Zero-Wait LoadControl: Instant 0ms playback start without buffering delays
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                /* minBufferMs = */ minBufferMs,
-                /* maxBufferMs = */ maxBufferMs,
-                /* bufferForPlaybackMs = */ 0,
-                /* bufferForPlaybackAfterRebufferMs = */ 100
-            )
-            .setPrioritizeTimeOverSizeThresholds(true)
-            .build()
-
-        val mediaSourceFactory = DefaultMediaSourceFactory(context.applicationContext)
-
-        val audioAttributes = AudioAttributes.Builder()
-            .setUsage(C.USAGE_MEDIA)
-            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
-            .build()
-
-        ExoPlayer.Builder(context.applicationContext, renderersFactory)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .setLoadControl(loadControl)
-            .setAudioAttributes(audioAttributes, true)
-            .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT)
-            .build().apply {
-                val mediaItem = MediaItem.fromUri(videoUri)
-                setMediaItem(mediaItem)
-                repeatMode = Player.REPEAT_MODE_ONE
-                prepare()
-                playWhenReady = true
+    LaunchedEffect(captureFrameTrigger) {
+        if (captureFrameTrigger > 0 && !isCapturingFrame) {
+            isCapturingFrame = true
+            val success = captureAndSaveVideoFrame(context, videoUri, currentPositionMs)
+            isCapturingFrame = false
+            if (success) {
+                Toast.makeText(context, "Frame saved to gallery successfully", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Could not capture frame", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    // MAXIMUM PERFORMANCE STABLE ENGINE: Hardware Accelerated Decoders, Advanced Extractors & Safe Dynamic Buffers
+    val exoPlayer: ExoPlayer = remember(videoUri) {
+        VideoEngineManager.createHardenedPlayer(context).apply {
+            val mediaItem = MediaItem.fromUri(videoUri)
+            setMediaItem(mediaItem)
+            repeatMode = Player.REPEAT_MODE_ONE
+            prepare()
+            playWhenReady = true
+        }
     }
 
     LaunchedEffect(isLooping) {
@@ -270,6 +253,7 @@ fun VideoPlayerScreen(
 
             override fun onRenderedFirstFrame() {
                 isFirstFrameRendered = true
+                playbackError = null
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -292,6 +276,18 @@ fun VideoPlayerScreen(
 
             override fun onPlayerError(error: PlaybackException) {
                 error.printStackTrace()
+                // Multi-tier recovery: if hardware decoder or track capability fails, try auto recovery
+                val isDecoderError = error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+                        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
+                        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED
+
+                if (isDecoderError) {
+                    try {
+                        exoPlayer.prepare()
+                        exoPlayer.play()
+                        return
+                    } catch (_: Exception) {}
+                }
                 playbackError = error.localizedMessage ?: "Playback Error (${error.errorCodeName})"
             }
         }
@@ -299,16 +295,18 @@ fun VideoPlayerScreen(
 
         onDispose {
             exoPlayer.removeListener(listener)
+            exoPlayer.stop()
+            exoPlayer.clearMediaItems()
             exoPlayer.release()
         }
     }
 
-    // Progress ticker: Only update when controls are visible to avoid unnecessary UI thread recomposition overhead
+    // Progress ticker: 60 FPS smooth updates (16ms) when controls are visible
     LaunchedEffect(isPlaying, showControls) {
         while (isPlaying) {
             currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
             durationMs = exoPlayer.duration.coerceAtLeast(0L)
-            delay(if (showControls) 200 else 1000)
+            delay(if (showControls) 16L else 500L)
         }
     }
 
@@ -447,9 +445,7 @@ fun VideoPlayerScreen(
             exit = fadeOut()
         ) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.45f))
+                modifier = Modifier.fillMaxSize()
             ) {
                 // Center Controls
                 Row(
@@ -593,32 +589,6 @@ fun VideoPlayerScreen(
                                     )
                                 }
                             }
-
-                            // Capture Video Frame Screenshot Button
-                            IconButton(
-                                onClick = {
-                                    if (!isCapturingFrame) {
-                                        isCapturingFrame = true
-                                        coroutineScope.launch {
-                                            val success = captureAndSaveVideoFrame(context, videoUri, currentPositionMs)
-                                            isCapturingFrame = false
-                                            if (success) {
-                                                Toast.makeText(context, "Frame saved to gallery successfully", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                Toast.makeText(context, "Could not capture frame", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    }
-                                },
-                                enabled = !isCapturingFrame
-                            ) {
-                                Icon(
-                                    imageVector = CustomIcons.FitScreen,
-                                    contentDescription = "Capture Frame",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
                         }
                     }
 
@@ -629,6 +599,13 @@ fun VideoPlayerScreen(
                             val newPosition = (fraction * durationMs).toLong()
                             exoPlayer.seekTo(newPosition)
                             currentPositionMs = newPosition
+                        },
+                        thumb = {
+                            SliderDefaults.Thumb(
+                                interactionSource = remember { MutableInteractionSource() },
+                                thumbSize = DpSize(12.dp, 12.dp),
+                                colors = SliderDefaults.colors(thumbColor = primaryAccent)
+                            )
                         },
                         colors = SliderDefaults.colors(
                             thumbColor = primaryAccent,

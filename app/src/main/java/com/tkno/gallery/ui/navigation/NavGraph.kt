@@ -23,9 +23,15 @@ import com.tkno.gallery.ui.screens.editor.PhotoEditorScreen
 import com.tkno.gallery.ui.screens.editor.VideoEditorScreen
 import com.tkno.gallery.ui.screens.home.HomeScreen
 import com.tkno.gallery.ui.screens.menu.*
+import com.tkno.gallery.ui.screens.player.ShortsPlayerScreen
 import com.tkno.gallery.ui.screens.trash.TrashScreen
 import com.tkno.gallery.ui.screens.viewer.MediaPagerScreen
 import kotlinx.coroutines.launch
+
+import android.content.Intent
+import android.provider.MediaStore
+import androidx.compose.ui.platform.LocalContext
+import com.tkno.gallery.util.MediaIntentResolver
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -34,8 +40,11 @@ fun NavGraph(
     mediaItems: List<MediaItem>,
     albums: List<Album>,
     favoritesManager: FavoritesManager,
-    repository: MediaStoreRepository
+    repository: MediaStoreRepository,
+    incomingIntent: Intent? = null,
+    onIntentConsumed: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val favoriteUris by favoritesManager.favoriteUris.collectAsState()
 
     val mediaItemsWithFavorites = remember(mediaItems, favoriteUris) {
@@ -44,8 +53,39 @@ fun NavGraph(
 
     var activeMediaList by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var activeInitialIndex by remember { mutableIntStateOf(0) }
+    var focusedMediaId by remember { mutableStateOf<Long?>(null) }
     var selectedAlbumItem by remember { mutableStateOf<Album?>(null) }
     var editingMediaItem by remember { mutableStateOf<MediaItem?>(null) }
+    var isExternalViewerMode by remember { mutableStateOf(false) }
+
+    // Handle Incoming Intent (ACTION_VIEW, ACTION_SEND, ACTION_SEND_MULTIPLE, ACTION_REVIEW, etc.)
+    LaunchedEffect(incomingIntent) {
+        val intent = incomingIntent ?: return@LaunchedEffect
+        if (!MediaIntentResolver.isMediaIntent(intent)) return@LaunchedEffect
+
+        val resolvedList = MediaIntentResolver.resolveMediaItemsFromIntent(context, intent)
+        if (resolvedList.isNotEmpty()) {
+            isExternalViewerMode = true
+            activeMediaList = resolvedList
+            focusedMediaId = resolvedList[0].id
+            activeInitialIndex = 0
+
+            try {
+                // Ensure NavHost is fully initialized before navigating
+                while (navController.currentBackStackEntry == null) {
+                    kotlinx.coroutines.delay(30)
+                }
+                if (navController.currentDestination?.route != "media_pager") {
+                    navController.navigate("media_pager") {
+                        launchSingleTop = true
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        onIntentConsumed()
+    }
 
     val updatedActiveMediaList = remember(activeMediaList, favoriteUris) {
         activeMediaList.map { it.copy(isFavorite = it.uri.toString() in favoriteUris) }
@@ -62,7 +102,7 @@ fun NavGraph(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = currentRoute != "media_pager" && currentRoute != "photo_editor" && currentRoute != "video_editor",
+        gesturesEnabled = currentRoute != "media_pager" && currentRoute != "shorts_player" && currentRoute != "photo_editor" && currentRoute != "video_editor",
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = MaterialTheme.colorScheme.background,
@@ -106,10 +146,21 @@ fun NavGraph(
                     HomeScreen(
                         mediaItems = mediaItemsWithFavorites,
                         albums = albums,
+                        focusedMediaId = focusedMediaId,
                         onItemClick = { item, list ->
+                            isExternalViewerMode = false
                             activeMediaList = list
+                            focusedMediaId = item.id
                             activeInitialIndex = list.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
                             navController.navigate("media_pager")
+                        },
+                        onVideoShortsClick = { item, list ->
+                            isExternalViewerMode = false
+                            val videoOnlyList = list.filter { it.isVideo }
+                            activeMediaList = videoOnlyList
+                            focusedMediaId = item.id
+                            activeInitialIndex = videoOnlyList.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
+                            navController.navigate("shorts_player")
                         },
                         onAlbumClick = { album ->
                             selectedAlbumItem = album
@@ -147,10 +198,21 @@ fun NavGraph(
                     HomeScreen(
                         mediaItems = albumMedia,
                         albums = emptyList(),
+                        focusedMediaId = focusedMediaId,
                         onItemClick = { item, list ->
+                            isExternalViewerMode = false
                             activeMediaList = list
+                            focusedMediaId = item.id
                             activeInitialIndex = list.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
                             navController.navigate("media_pager")
+                        },
+                        onVideoShortsClick = { item, list ->
+                            isExternalViewerMode = false
+                            val videoOnlyList = list.filter { it.isVideo }
+                            activeMediaList = videoOnlyList
+                            focusedMediaId = item.id
+                            activeInitialIndex = videoOnlyList.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
+                            navController.navigate("shorts_player")
                         },
                         onNavigateToRoute = { route ->
                             navController.navigate(route)
@@ -181,7 +243,16 @@ fun NavGraph(
                     MediaPagerScreen(
                         mediaItems = updatedActiveMediaList,
                         initialIndex = activeInitialIndex,
-                        onBackClick = { navController.popBackStack() },
+                        onBackClick = {
+                            if (isExternalViewerMode) {
+                                (context as? android.app.Activity)?.finishAndRemoveTask()
+                            } else if (!navController.popBackStack()) {
+                                (context as? android.app.Activity)?.finish()
+                            }
+                        },
+                        onCurrentItemChanged = { item ->
+                            focusedMediaId = item.id
+                        },
                         onToggleFavorite = { mediaItem ->
                             favoritesManager.toggleFavorite(mediaItem.uri.toString())
                         },
@@ -202,6 +273,45 @@ fun NavGraph(
                         },
                         sharedTransitionScope = this@SharedTransitionLayout,
                         animatedVisibilityScope = this@composable
+                    )
+                }
+
+                composable(
+                    route = "shorts_player",
+                    enterTransition = {
+                        fadeIn(tween(300, easing = FastOutSlowInEasing))
+                    },
+                    exitTransition = {
+                        fadeOut(tween(300, easing = FastOutSlowInEasing))
+                    },
+                    popEnterTransition = {
+                        fadeIn(tween(300, easing = FastOutSlowInEasing))
+                    },
+                    popExitTransition = {
+                        fadeOut(tween(300, easing = FastOutSlowInEasing))
+                    }
+                ) {
+                    ShortsPlayerScreen(
+                        mediaItems = updatedActiveMediaList,
+                        initialIndex = activeInitialIndex,
+                        onBackClick = { navController.popBackStack() },
+                        onCurrentItemChanged = { item ->
+                            focusedMediaId = item.id
+                        },
+                        onToggleFavorite = { mediaItem ->
+                            favoritesManager.toggleFavorite(mediaItem.uri.toString())
+                        },
+                        onDeleteMediaItem = { mediaItem ->
+                            val updatedList = activeMediaList.filter { it.id != mediaItem.id }
+                            activeMediaList = updatedList
+                            if (updatedList.isEmpty()) {
+                                navController.popBackStack()
+                            }
+                        },
+                        onEditClick = { mediaItem ->
+                            editingMediaItem = mediaItem
+                            navController.navigate("video_editor")
+                        }
                     )
                 }
 
@@ -268,6 +378,7 @@ fun NavGraph(
                             when (route) {
                                 "general" -> navController.navigate("general_settings")
                                 "appearance" -> navController.navigate("appearance")
+                                "interface_and_interaction" -> navController.navigate("interface_and_interaction")
                             }
                         }
                     )
@@ -289,6 +400,12 @@ fun NavGraph(
                                 "dynamic_color" -> navController.navigate("dynamic_color")
                             }
                         }
+                    )
+                }
+
+                composable("interface_and_interaction") {
+                    InterfaceAndInteractionPreferences(
+                        onNavigateBack = { navController.popBackStack() }
                     )
                 }
 

@@ -19,10 +19,14 @@ import com.tkno.gallery.theme.GalleryTheme
 import com.tkno.gallery.ui.components.PermissionHandler
 import com.tkno.gallery.ui.navigation.NavGraph
 
+import android.content.Intent
+import kotlinx.coroutines.flow.MutableStateFlow
+
 class MainActivity : ComponentActivity() {
 
     private lateinit var repository: MediaStoreRepository
     private lateinit var favoritesManager: FavoritesManager
+    private val incomingIntentFlow = MutableStateFlow<Intent?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,6 +35,7 @@ class MainActivity : ComponentActivity() {
 
         repository = MediaStoreRepository(applicationContext)
         favoritesManager = FavoritesManager(applicationContext)
+        incomingIntentFlow.value = intent
 
         setContent {
             GalleryTheme {
@@ -38,7 +43,12 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    PermissionHandler {
+                    val incomingIntent by incomingIntentFlow.collectAsState()
+                    val isMediaIntent = remember(incomingIntent) {
+                        com.tkno.gallery.util.MediaIntentResolver.isMediaIntent(incomingIntent)
+                    }
+
+                    PermissionHandler(bypassPermission = isMediaIntent) {
                         val mediaItems by repository.getMediaItemsFlow().collectAsState(initial = emptyList())
                         var albums by remember { mutableStateOf<List<Album>>(emptyList()) }
 
@@ -54,12 +64,22 @@ class MainActivity : ComponentActivity() {
                             mediaItems = mediaItems,
                             albums = albums,
                             favoritesManager = favoritesManager,
-                            repository = repository
+                            repository = repository,
+                            incomingIntent = incomingIntent,
+                            onIntentConsumed = {
+                                incomingIntentFlow.value = null
+                            }
                         )
                     }
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        incomingIntentFlow.value = intent
     }
 
     private fun enable120HzDisplayMode() {
@@ -69,16 +89,18 @@ class MainActivity : ComponentActivity() {
                 val activeDisplay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     display
                 } else {
-                    windowManager.defaultDisplay
+                    windowManager?.defaultDisplay
                 }
                 activeDisplay?.supportedModes?.maxByOrNull { it.refreshRate }?.let { maxMode ->
-                    val layoutParams = window.attributes
-                    layoutParams.preferredDisplayModeId = maxMode.modeId
-                    window.attributes = layoutParams
+                    val layoutParams = window?.attributes
+                    if (layoutParams != null && layoutParams.preferredDisplayModeId != maxMode.modeId) {
+                        layoutParams.preferredDisplayModeId = maxMode.modeId
+                        window.attributes = layoutParams
+                    }
                 }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (t: Throwable) {
+            t.printStackTrace()
         }
     }
 }

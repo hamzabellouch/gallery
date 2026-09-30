@@ -1,6 +1,7 @@
 package com.tkno.gallery.ui.page.settings
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FabPosition
@@ -25,6 +26,7 @@ fun BasePreferencePage(
     modifier: Modifier = Modifier,
     title: String,
     onBack: () -> Unit,
+    actions: @Composable RowScope.() -> Unit = {},
     topBar: @Composable (() -> Unit)? = null,
     bottomBar: @Composable (() -> Unit) = {},
     snackbarHost: @Composable () -> Unit = {},
@@ -49,7 +51,7 @@ fun BasePreferencePage(
                         title = { Text(text = title, color = MaterialTheme.colorScheme.onBackground) },
                         scrollBehavior = scrollBehavior,
                         navigationIcon = { BackButton(onClick = onBack) },
-                        windowInsets = WindowInsets(0.dp),
+                        actions = actions,
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.background,
                             scrolledContainerColor = MaterialTheme.colorScheme.background,

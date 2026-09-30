@@ -85,7 +85,8 @@ fun GalleryTheme(
             primary = if (darkTheme) TaskbarActivePrimaryDark else TaskbarActivePrimaryLight,
             secondaryContainer = if (darkTheme) TaskbarIndicatorCapsuleDark else TaskbarIndicatorCapsuleLight,
             onSecondaryContainer = if (darkTheme) TaskbarActivePrimaryDark else TaskbarActivePrimaryLight,
-            onSurfaceVariant = if (darkTheme) TaskbarInactiveVariantDark else TaskbarInactiveVariantLight
+            onSurfaceVariant = if (darkTheme) TaskbarInactiveVariantDark else TaskbarInactiveVariantLight,
+            surfaceContainer = if (darkTheme) TaskbarNavContainerDark else TaskbarNavContainerLight
         )
     } else {
         baseColorScheme

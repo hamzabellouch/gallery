@@ -193,24 +193,7 @@ object ImageFilterUtils {
                 }
             }
 
-            // 2. Apply Crop if specified
-            if (cropRectNormalized != null) {
-                val left = (cropRectNormalized.left.coerceIn(0f, 1f) * sourceBitmap.width).toInt()
-                val top = (cropRectNormalized.top.coerceIn(0f, 1f) * sourceBitmap.height).toInt()
-                val right = (cropRectNormalized.right.coerceIn(0f, 1f) * sourceBitmap.width).toInt()
-                val bottom = (cropRectNormalized.bottom.coerceIn(0f, 1f) * sourceBitmap.height).toInt()
-
-                val cropWidth = (right - left).coerceAtLeast(1)
-                val cropHeight = (bottom - top).coerceAtLeast(1)
-
-                val cropped = Bitmap.createBitmap(sourceBitmap, left, top, cropWidth, cropHeight)
-                if (cropped != sourceBitmap) {
-                    sourceBitmap.recycle()
-                    sourceBitmap = cropped
-                }
-            }
-
-            // 3. Apply Rotation if specified
+            // 2. Apply Rotation if specified (applied before crop so normalized crop coords match the oriented image)
             val normalizedRotation = ((rotationAngle % 360) + 360) % 360
             if (normalizedRotation != 0f) {
                 val matrix = Matrix().apply { postRotate(normalizedRotation) }
@@ -218,6 +201,23 @@ object ImageFilterUtils {
                 if (rotated != sourceBitmap) {
                     sourceBitmap.recycle()
                     sourceBitmap = rotated
+                }
+            }
+
+            // 3. Apply Crop if specified
+            if (cropRectNormalized != null) {
+                val left = (cropRectNormalized.left.coerceIn(0f, 1f) * sourceBitmap.width).toInt()
+                val top = (cropRectNormalized.top.coerceIn(0f, 1f) * sourceBitmap.height).toInt()
+                val right = (cropRectNormalized.right.coerceIn(0f, 1f) * sourceBitmap.width).toInt()
+                val bottom = (cropRectNormalized.bottom.coerceIn(0f, 1f) * sourceBitmap.height).toInt()
+
+                val cropWidth = (right - left).coerceAtLeast(1).coerceAtMost(sourceBitmap.width - left)
+                val cropHeight = (bottom - top).coerceAtLeast(1).coerceAtMost(sourceBitmap.height - top)
+
+                val cropped = Bitmap.createBitmap(sourceBitmap, left, top, cropWidth, cropHeight)
+                if (cropped != sourceBitmap) {
+                    sourceBitmap.recycle()
+                    sourceBitmap = cropped
                 }
             }
 

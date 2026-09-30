@@ -241,4 +241,15 @@
     <string name="onboarding_page2_desc">Get notification whenever you have too much cache. This will help you to track cache in notification.</string>
     <string name="onboarding_page3_title">That’s all!</string>
     <string name="onboarding_page3_desc">Everything was successfully configured and now the app is ready to work. Have a nice use.</string>
+    <string name="whats_new">What\'s new</string>
+    <string name="show_resolution_badges">Show resolution badges</string>
+    <string name="show_resolution_badges_desc">Display resolution icons (such as 4K and Full HD) on media cards</string>
+    <string name="card_rounded_corners">Rounded corners</string>
+    <string name="card_rounded_corners_desc">Apply rounded corners to media cards in gallery, videos, and images</string>
+    <string name="whatsapp">WhatsApp</string>
+    <string name="whatsapp_desc">follow the developer on WhatsApp for more updates</string>
+    <string name="problem_report">Report problem</string>
+    <string name="problem_report_dialog_desc">If you encounter any problem, please fill out this form (it will take approximately 20 seconds).</string>
+    <string name="open_report_form">Report</string>
+    <string name="star">Star</string>
 </resources>

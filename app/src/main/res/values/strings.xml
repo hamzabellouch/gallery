@@ -80,7 +80,6 @@
     <string name="issue_tracker">Issue tracker</string>
     <string name="issue_tracker_hint">Encountered an error? Before reporting a new issue, please search our issue tracker. Many common problems have already been addressed and documented there.</string>
     <string name="menu">Menu</string>
-    <string name="menu_options_listed_count">%1$d options listed</string>
     <string name="scan">Scan</string>
     <string name="contact">Contact</string>
     <string name="contact_desc">Contact the developer to add new features in Gallery</string>
@@ -92,6 +91,7 @@
     <string name="github_stars_desc">Support this app by starring it on GitHub</string>
     <string name="package_name">Package name</string>
     <string name="privacy_policy">Privacy policy</string>
+    <string name="privacy_policy_desc">Read our privacy policy and terms</string>
     <string name="done">Done</string>
     <string name="downloading">Downloading...</string>
     <string name="downloaded_successfully">Downloaded successfully</string>
@@ -105,4 +105,21 @@
     <string name="new_update_available">New Update Available</string>
     <string name="new_update_desc">Version %1$s is available. Tap to download and install.</string>
     <string name="update_directory">Update directory</string>
+    <string name="whats_new">What\'s new</string>
+    <string name="interface_and_interaction">Interface and interaction</string>
+    <string name="interface_and_interaction_desc">Customize controls, navigation, and viewer bars</string>
+    <string name="classic_viewer_bar">Classic media taskbar</string>
+    <string name="classic_viewer_bar_desc">Use the original full-width bottom bar in image and video viewer instead of the floating capsule</string>
+    <string name="use_classic_taskbar">Classic taskbar</string>
+    <string name="use_classic_taskbar_desc">Use the classic bottom navigation bar instead of the floating capsule dock</string>
+    <string name="show_resolution_badges">Show resolution badges</string>
+    <string name="show_resolution_badges_desc">Display resolution icons (such as 4K and Full HD) on media cards</string>
+    <string name="card_rounded_corners">Rounded corners</string>
+    <string name="card_rounded_corners_desc">Apply rounded corners to media cards in gallery, videos, and images</string>
+    <string name="whatsapp">WhatsApp</string>
+    <string name="whatsapp_desc">follow the developer on WhatsApp for more updates</string>
+    <string name="problem_report">Report problem</string>
+    <string name="problem_report_dialog_desc">If you encounter any problem, please fill out this form (it will take approximately 20 seconds).</string>
+    <string name="open_report_form">Report</string>
+    <string name="star">Star</string>
 </resources>

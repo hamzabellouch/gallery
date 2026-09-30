@@ -12,8 +12,8 @@ android {
         applicationId = "com.tkno.gallery"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.0.2-beta"
+        versionCode = 3
+        versionName = "0.0.3-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -74,6 +74,8 @@ dependencies {
     // Media3 ExoPlayer for 4K 120fps Video Playback Engine
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
+    implementation(libs.androidx.media3.transformer)
+    implementation(libs.androidx.media3.effect)
 
     // Image loading & EXIF metadata
     implementation(libs.coil.compose)

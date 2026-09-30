@@ -6,7 +6,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
+import android.os.CancellationSignal
+import android.os.OperationCanceledException
 import android.provider.MediaStore
+import android.util.LruCache
 import android.util.Size
 import coil3.ImageLoader
 import coil3.asImage
@@ -17,18 +20,18 @@ import coil3.fetch.ImageFetchResult
 import coil3.request.Options
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 
 /**
  * Ultra-fast MediaStore Hardware Thumbnail Fetcher for Coil 3.
  *
- * Utilizes the Android OS built-in hardware-accelerated MediaStore thumbnail cache
- * (ContentResolver.loadThumbnail on API 29+ and MediaStore.Images/Video.Thumbnails on API 26-28).
- *
- * This provides 1-2ms instantaneous thumbnail decoding for both high-res photos (up to 200MP)
- * and 4K/8K videos, completely eliminating CPU thrashing, MediaMetadataRetriever overhead,
- * and dropped frames during fast scrolling.
+ * Features:
+ * 1. Bounded Parallelism (8 concurrent threads): Prevents Binder IPC & system_server saturation during rapid flings.
+ * 2. Hardware CancellationSignal: Immediately aborts OS thumbnail decoding when items scroll off-screen.
+ * 3. L1 High-Speed In-Memory Cache: Sub-millisecond synchronous bitmap retrieval on scroll revisit.
+ * 4. Adaptive Tier Sizing: Maps Year View to fast 96x96 MICRO_KIND, Month View to 160x160, and Day Views to 256-384px.
  */
 class MediaStoreThumbnailFetcher(
     private val context: Context,
@@ -36,10 +39,49 @@ class MediaStoreThumbnailFetcher(
     private val options: Options
 ) : Fetcher {
 
-    override suspend fun fetch(): FetchResult? = withContext(Dispatchers.IO) {
+    companion object {
+        // Dedicated thread pool with max 8 parallel queries to protect Android MediaProvider Binder IPC
+        private val thumbnailDispatcher = Dispatchers.IO.limitedParallelism(8)
+
+        // High-speed L1 in-memory bitmap cache (300 items) for instant sub-millisecond retrieval
+        private val l1Cache = object : LruCache<String, Bitmap>(300) {
+            override fun sizeOf(key: String, value: Bitmap): Int = 1
+        }
+    }
+
+    override suspend fun fetch(): FetchResult? = withContext(thumbnailDispatcher) {
         coroutineContext.ensureActive()
-        val bitmap = loadThumbnailBitmap() ?: return@withContext null
+
+        val targetSize = resolveTargetSize()
+        val cacheKey = "${uri}_${targetSize.width}x${targetSize.height}"
+
+        // 1. Instant L1 memory cache hit
+        l1Cache.get(cacheKey)?.let { cachedBitmap ->
+            if (!cachedBitmap.isRecycled) {
+                return@withContext ImageFetchResult(
+                    image = cachedBitmap.asImage(),
+                    isSampled = true,
+                    dataSource = DataSource.MEMORY
+                )
+            }
+        }
+
         coroutineContext.ensureActive()
+
+        // 2. CancellationSignal linked to Coroutine lifecycle
+        val signal = CancellationSignal()
+        coroutineContext.job.invokeOnCompletion {
+            try {
+                signal.cancel()
+            } catch (_: Throwable) {}
+        }
+
+        val bitmap = loadThumbnailBitmap(targetSize, signal) ?: return@withContext null
+
+        coroutineContext.ensureActive()
+
+        l1Cache.put(cacheKey, bitmap)
+
         ImageFetchResult(
             image = bitmap.asImage(),
             isSampled = true,
@@ -47,25 +89,35 @@ class MediaStoreThumbnailFetcher(
         )
     }
 
-    private fun loadThumbnailBitmap(): Bitmap? {
-        val resolver: ContentResolver = context.contentResolver
-
-        // Calculate requested thumbnail dimension
-        val targetSize = when {
+    private fun resolveTargetSize(): Size {
+        val (reqW, reqH) = when {
             options.size.width is coil3.size.Dimension.Pixels && options.size.height is coil3.size.Dimension.Pixels -> {
                 val w = (options.size.width as coil3.size.Dimension.Pixels).px
                 val h = (options.size.height as coil3.size.Dimension.Pixels).px
-                Size(w.coerceAtLeast(128), h.coerceAtLeast(128))
+                Pair(w, h)
             }
-            else -> Size(256, 256)
+            else -> Pair(256, 256)
         }
 
-        // 1. Android 10+ (API 29+): Use ContentResolver.loadThumbnail for both Images & Videos
+        return when {
+            reqW <= 100 -> Size(96, 96)       // Year view (10 columns) -> matches Android MICRO_KIND
+            reqW <= 180 -> Size(160, 160)    // Month view (7 columns)
+            reqW <= 280 -> Size(256, 256)    // Medium view (4 columns)
+            else -> Size(384, 384)          // Large view (3 columns)
+        }
+    }
+
+    private fun loadThumbnailBitmap(targetSize: Size, signal: CancellationSignal): Bitmap? {
+        val resolver: ContentResolver = context.contentResolver
+
+        // 1. Android 10+ (API 29+): Use ContentResolver.loadThumbnail with hardware acceleration & CancellationSignal
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
-                return resolver.loadThumbnail(uri, targetSize, null)
+                return resolver.loadThumbnail(uri, targetSize, signal)
+            } catch (_: OperationCanceledException) {
+                return null
             } catch (_: Throwable) {
-                // Fallback to default Coil decoders if system thumbnail fails
+                // Fallback
             }
         }
 
@@ -74,13 +126,20 @@ class MediaStoreThumbnailFetcher(
             val id = ContentUris.parseId(uri)
             val uriString = uri.toString()
             val isVideo = uriString.contains("video", ignoreCase = true)
+            val kind = if (targetSize.width <= 96) {
+                @Suppress("DEPRECATION")
+                MediaStore.Images.Thumbnails.MICRO_KIND
+            } else {
+                @Suppress("DEPRECATION")
+                MediaStore.Images.Thumbnails.MINI_KIND
+            }
 
             return if (isVideo) {
                 @Suppress("DEPRECATION")
                 MediaStore.Video.Thumbnails.getThumbnail(
                     resolver,
                     id,
-                    MediaStore.Video.Thumbnails.MINI_KIND,
+                    kind,
                     null
                 )
             } else {
@@ -88,7 +147,7 @@ class MediaStoreThumbnailFetcher(
                 MediaStore.Images.Thumbnails.getThumbnail(
                     resolver,
                     id,
-                    MediaStore.Images.Thumbnails.MINI_KIND,
+                    kind,
                     null
                 )
             }
@@ -101,7 +160,7 @@ class MediaStoreThumbnailFetcher(
 
     class Factory(private val context: Context) : Fetcher.Factory<Uri> {
         override fun create(data: Uri, options: Options, imageLoader: ImageLoader): Fetcher? {
-            // Only intercept media content URIs (images and videos)
+            // Intercept media content URIs (images and videos)
             val scheme = data.scheme
             val authority = data.authority
             if (scheme == ContentResolver.SCHEME_CONTENT &&
