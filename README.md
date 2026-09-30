@@ -113,4 +113,4 @@ Thank you for checking out Gallery. If you have any feedback or suggestions, fee
 **hamzabellouchcontact@gmail.com**
 
 Stay connected and follow us on:  
-[Facebook](https://facebook.com/hamzabellouch1) | [Instagram](https://instagram.com/hamzabellouch0) | [Twitter / X](https://x.com/hamzabellouch0) | [Telegram](https://t.me/hamzabellouch) | [LinkedIn](https://www.linkedin.com/in/hamzabellouch) | [YouTube](https://www.youtube.com/@hamzabellouch)
+[WhatsApp](https://whatsapp.com/channel/0029Vb7MArw0LKZMpjjqOk2P) | [Facebook](https://facebook.com/hamzabellouch1) | [Instagram](https://instagram.com/hamzabellouch0) | [Twitter / X](https://x.com/hamzabellouch0) | [Telegram](https://t.me/hamzabellouch) | [LinkedIn](https://www.linkedin.com/in/hamzabellouch) | [YouTube](https://www.youtube.com/@hamzabellouch)
