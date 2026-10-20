@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import com.tkno.gallery.theme.DarkCapsuleSurface
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -52,6 +54,8 @@ fun FloatingBottomBar(
     currentTab: Tab,
     onTabSelect: (Tab) -> Unit,
     modifier: Modifier = Modifier,
+    hideLabels: Boolean = false,
+    animateIndicator: Boolean = true,
     onOrderChanged: (List<Tab>) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
@@ -68,9 +72,12 @@ fun FloatingBottomBar(
             .padding(bottom = 16.dp, start = 20.dp, end = 20.dp),
         contentAlignment = Alignment.Center,
     ) {
+        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val dockBgColor = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f) else MaterialTheme.colorScheme.background.copy(alpha = 0.94f)
+
         // Pill Navigation Bar Dock - تصميم عائم بشكل كبسولة
         Surface(
-            color = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+            color = dockBgColor,
             shape = RoundedCornerShape(percent = 50),
             tonalElevation = 0.dp,
             shadowElevation = 6.dp,
@@ -107,10 +114,12 @@ fun FloatingBottomBar(
                         label = "indicatorOffsetX"
                     )
 
+                    val indicatorOffsetX = if (animateIndicator) animatedOffsetX else targetOffsetX
+
                     // عنصر الهالة / المؤشر الدائري المنزلق في الخلفية
                     Box(
                         modifier = Modifier
-                            .offset(x = animatedOffsetX)
+                            .offset(x = indicatorOffsetX)
                             .width(slotWidth)
                             .fillMaxHeight()
                             .padding(horizontal = 2.dp, vertical = 6.dp)
@@ -232,19 +241,21 @@ fun FloatingBottomBar(
                                     imageVector = info.icon,
                                     contentDescription = info.label,
                                     tint = iconTint,
-                                    modifier = Modifier.size(22.dp),
+                                    modifier = Modifier.size(if (hideLabels) 24.dp else 22.dp),
                                 )
-                                Text(
-                                    text = info.label,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                                        fontSize = 11.sp,
-                                    ),
-                                    color = textColor,
-                                    modifier = Modifier.padding(top = 2.dp),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                                if (!hideLabels) {
+                                    Text(
+                                        text = info.label,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                            fontSize = 11.sp,
+                                        ),
+                                        color = textColor,
+                                        modifier = Modifier.padding(top = 2.dp),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                             }
                         }
                     }

@@ -44,7 +44,7 @@
     <string name="close">إغلاق</string>
     <string name="to">النهاية</string>
     <string name="translate">ترجمة</string>
-    <string name="translate_desc">المساعدة في ترجمة هذا التطبيق على Hosted Weblate</string>
+    <string name="translate_desc">المساعدة في ترجمة هذا التطبيق على مستودع GitHub</string>
     <string name="github_issue">مشكلة في GitHub</string>
     <string name="github_issue_desc">تقديم إبلاغ عن خطأ أو طلب ميزة جديدة</string>
     <string name="info_copied">تم نسخ المعلومات إلى الحافظة</string>
@@ -288,6 +288,12 @@
     <string name="classic_viewer_bar_desc">استخدام الشريط القديم الممتد بعرض الشاشة في عارض الصور والفيديوهات بدلاً من الكبسولة العائمة</string>
     <string name="use_classic_taskbar">شريط المهام الكلاسيكي</string>
     <string name="use_classic_taskbar_desc">استخدام شريط التنقل السفلي الكلاسيكي بدلاً من الكبسولة العائمة</string>
+    <string name="navigation">التنقل</string>
+    <string name="hide_navigation_labels">إخفاء التسميات</string>
+    <string name="hide_navigation_labels_desc">إخفاء النصوص أسفل عناصر شريط التنقل</string>
+    <string name="animate_taskbar_indicator">تحريك المؤشر</string>
+    <string name="animate_taskbar_indicator_desc">تحريك مؤشر الكبسولة الانزلاقي عند التبديل بين علامات التبويب</string>
+    <string name="media_viewer">عارض الوسائط</string>
     <string name="show_resolution_badges">إظهار شارات الدقة</string>
     <string name="show_resolution_badges_desc">عرض أيقونات الدقة (مثل 4K و Full HD) على بطاقات الصور والفيديوهات</string>
     <string name="card_rounded_corners">حواف البطاقات المنحنية</string>
@@ -298,4 +304,37 @@
     <string name="problem_report_dialog_desc">إذا واجهتكم مشكلة، المرجو ملء هذه الاستمارة، لن تتجاوز المدة تقريباً 20 ثانية.</string>
     <string name="open_report_form">إبلاغ</string>
     <string name="star">Star</string>
+
+    <!-- Language Packs -->
+    <string name="download_languages">تحميل اللغات</string>
+    <string name="download_languages_desc">تحميل وتثبيت ترجمات المجتمع</string>
+    <string name="downloaded_languages">اللغات المحملة</string>
+    <string name="built_in_languages">اللغات</string>
+    <string name="languages">اللغات</string>
+    <string name="no_downloaded_languages">لا توجد لغات محملة بعد</string>
+    <string name="download_failed">فشل تحميل ملف اللغة</string>
+    <string name="language_downloaded">تم تحميل وتثبيت اللغة بنجاح</string>
+    <string name="language_deleted">تم حذف اللغة</string>
+    <string name="available_community_languages">لغات المجتمع المتاحة</string>
+    <string name="install">تثبيت</string>
+    <string name="installed">مثبت</string>
+    <string name="retry">إعادة المحاولة</string>
+    <string name="no_internet_error">لا يوجد اتصال بالإنترنت</string>
+    <string name="delete">حذف</string>
+
+    <!-- Onboarding / Welcome Flow -->
+    <string name="gallery_brand" translatable="false">Gallery</string>
+    <string name="links_brand" translatable="false">Gallery</string>
+    <string name="welcome_to_gallery">مرحباً بك في\nGallery</string>
+    <string name="welcome_to_links">مرحباً بك في\nGallery</string>
+    <string name="welcome_desc">استمتع بتصفح الصور ومقاطع الفيديو وإدارة الألبومات بسرعة وخصوصية تامة، في أي وقت ومن أي مكان.</string>
+    <string name="get_started">ابدأ الآن</string>
+    <string name="onboarding_features_title">عارض وسائط\nسريع وسلس</string>
+    <string name="onboarding_features_desc">استمتع بتصفح فائق السلاسة بمعدل 120 هرتز، وتشغيل فيديوهات 4K بدقة عالية، مع الحفاظ على الخصوصية الكاملة على جهازك.</string>
+    <string name="skip">تخطي</string>
+    <string name="continue_button">متابعة</string>
+    <string name="onboarding_level_up_title">ارتقِ بتجربتك\nإلى المستوى التالي</string>
+    <string name="onboarding_level_up_desc">تجربة معرض نقية خالية من الإعلانات تماماً، بدون أي تتبع أو إرسال بيانات، مع خصوصية تامة لذكرياتك على جهازك.</string>
+    <string name="not_now">ليس الآن</string>
+    <string name="lets_go">لنبدأ</string>
 </resources>

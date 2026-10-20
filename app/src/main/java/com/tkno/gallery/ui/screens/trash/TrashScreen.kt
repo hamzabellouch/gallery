@@ -48,7 +48,7 @@ fun TrashScreen(
         mutableStateOf(prefs.getBoolean("show_resolution_badges", false))
     }
     var cardRoundedCorners by remember {
-        mutableStateOf(prefs.getBoolean("card_rounded_corners", false))
+        mutableStateOf(prefs.getBoolean("card_rounded_corners", true))
     }
 
     val trashedItems by repository.getTrashedMediaItemsFlow().collectAsState(initial = emptyList())
@@ -57,17 +57,22 @@ fun TrashScreen(
     var isSelectionMode by remember { mutableStateOf(false) }
     val selectedItemIds = remember { mutableStateListOf<Long>() }
 
-    DisposableEffect(prefs) {
-        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+    val preferenceListener = remember {
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
             if (key == "show_resolution_badges") {
                 showResolutionBadges = p.getBoolean("show_resolution_badges", false)
             } else if (key == "card_rounded_corners") {
-                cardRoundedCorners = p.getBoolean("card_rounded_corners", false)
+                cardRoundedCorners = p.getBoolean("card_rounded_corners", true)
             }
         }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    DisposableEffect(prefs) {
+        showResolutionBadges = prefs.getBoolean("show_resolution_badges", false)
+        cardRoundedCorners = prefs.getBoolean("card_rounded_corners", true)
+        prefs.registerOnSharedPreferenceChangeListener(preferenceListener)
         onDispose {
-            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+            prefs.unregisterOnSharedPreferenceChangeListener(preferenceListener)
         }
     }
 

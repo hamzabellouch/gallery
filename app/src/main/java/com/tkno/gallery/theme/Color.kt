@@ -33,3 +33,5 @@ val TaskbarIndicatorCapsuleLight = Color(0xFFE8F0FE)
 val TaskbarActivePrimaryLight = Color(0xFF1A73E8)
 val TaskbarInactiveVariantLight = Color(0xFF444746)
 
+// Unified Floating Capsule & Card Color for Dark Mode (derived from dark background #0F0E17)
+val DarkCapsuleSurface = Color(0xFF222030)

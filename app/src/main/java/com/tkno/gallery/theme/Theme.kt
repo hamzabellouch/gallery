@@ -24,6 +24,7 @@ private val DarkColorScheme = darkColorScheme(
     surface = DarkSurface,
     surfaceVariant = DarkSurfaceVariant,
     surfaceContainer = TaskbarNavContainerDark,
+    surfaceContainerHigh = DarkCapsuleSurface,
     onSurfaceVariant = TaskbarInactiveVariantDark
 )
 
@@ -37,6 +38,7 @@ private val LightColorScheme = lightColorScheme(
     surface = LightSurface,
     surfaceVariant = LightSurfaceVariant,
     surfaceContainer = TaskbarNavContainerLight,
+    surfaceContainerHigh = LightSurfaceVariant,
     onSurfaceVariant = TaskbarInactiveVariantLight
 )
 

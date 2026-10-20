@@ -20,6 +20,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import kotlin.OptIn
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -27,6 +29,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeDown
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.BrightnessHigh
+import androidx.compose.material.icons.filled.BrightnessLow
+import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -36,6 +44,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
@@ -68,6 +77,7 @@ import com.tkno.gallery.ui.components.CustomIcons
 import com.tkno.gallery.util.FormatUtils
 import com.tkno.gallery.util.VideoEngineManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -152,6 +162,10 @@ private suspend fun captureAndSaveVideoFrame(
 }
 
 
+private enum class GestureFeedbackType {
+    NONE, BRIGHTNESS, VOLUME
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VideoPlayerScreen(
@@ -210,6 +224,11 @@ fun VideoPlayerScreen(
     var videoFps by remember { mutableFloatStateOf(0f) }
     var isFirstFrameRendered by remember { mutableStateOf(false) }
     val primaryAccent = MaterialTheme.colorScheme.primary
+
+    // Visual Feedback States for Volume & Brightness Gestures
+    var activeGestureFeedback by remember { mutableStateOf(GestureFeedbackType.NONE) }
+    var gestureFeedbackValue by remember { mutableFloatStateOf(0f) }
+    var gestureDismissJob by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(captureFrameTrigger) {
         if (captureFrameTrigger > 0 && !isCapturingFrame) {
@@ -302,12 +321,13 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Progress ticker: Smooth updates without UI thread thrashing
+    // Progress ticker: Polled only when controls are active to eliminate UI recomposition during fullscreen playback
     LaunchedEffect(isPlaying, showControls) {
+        if (!showControls) return@LaunchedEffect
         while (isPlaying) {
             currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
             durationMs = exoPlayer.duration.coerceAtLeast(0L)
-            delay(if (showControls) 100L else 500L)
+            delay(100L)
         }
     }
 
@@ -349,8 +369,26 @@ fun VideoPlayerScreen(
                 val newPos = (exoPlayer.currentPosition + 10000).coerceAtMost(exoPlayer.duration)
                 exoPlayer.seekTo(newPos)
             },
-            onVolumeChange = {},
-            onBrightnessChange = {},
+            onVolumeChange = { volFraction ->
+                gestureDismissJob?.cancel()
+                activeGestureFeedback = GestureFeedbackType.VOLUME
+                gestureFeedbackValue = volFraction
+            },
+            onBrightnessChange = { brightnessFraction ->
+                gestureDismissJob?.cancel()
+                activeGestureFeedback = GestureFeedbackType.BRIGHTNESS
+                gestureFeedbackValue = brightnessFraction
+            },
+            onGestureStart = {
+                gestureDismissJob?.cancel()
+            },
+            onGestureEnd = {
+                gestureDismissJob?.cancel()
+                gestureDismissJob = coroutineScope.launch {
+                    delay(1000L)
+                    activeGestureFeedback = GestureFeedbackType.NONE
+                }
+            },
             onSwipeUp = onSwipeUp
         ) {
             AndroidView(
@@ -369,6 +407,11 @@ fun VideoPlayerScreen(
                             videoSurface.holder.setKeepScreenOn(true)
                             videoSurface.setZOrderOnTop(false)
                         }
+                    }
+                },
+                update = { playerView ->
+                    if (playerView.player != exoPlayer) {
+                        playerView.player = exoPlayer
                     }
                 },
                 modifier = Modifier.fillMaxSize()
@@ -428,9 +471,9 @@ fun VideoPlayerScreen(
             }
         }
 
-        // Overlay Controls
+        // Overlay Controls (Automatically hidden when adjusting Brightness or Volume)
         AnimatedVisibility(
-            visible = showControls && !isInPipMode && playbackError == null,
+            visible = showControls && !isInPipMode && playbackError == null && activeGestureFeedback == GestureFeedbackType.NONE,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -710,6 +753,83 @@ fun VideoPlayerScreen(
                             activeTrackColor = primaryAccent,
                             inactiveTrackColor = inactiveTrackColor
                         )
+                    )
+                }
+            }
+        }
+
+        // Centered Modern Capsule for Volume & Brightness Indicator
+        AnimatedVisibility(
+            visible = activeGestureFeedback != GestureFeedbackType.NONE && !isInPipMode,
+            enter = fadeIn(animationSpec = tween(150)) + scaleIn(initialScale = 0.88f, animationSpec = tween(150)),
+            exit = fadeOut(animationSpec = tween(280)) + scaleOut(targetScale = 0.88f, animationSpec = tween(280)),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            val capsuleBg = if (isDark) {
+                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f)
+            } else {
+                MaterialTheme.colorScheme.background.copy(alpha = 0.88f)
+            }
+            val capsuleContent = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+            val capsuleElevation = if (isDark) 0.dp else 4.dp
+
+            Surface(
+                shape = RoundedCornerShape(32.dp),
+                color = capsuleBg,
+                contentColor = capsuleContent,
+                shadowElevation = capsuleElevation,
+                border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    val icon = when (activeGestureFeedback) {
+                        GestureFeedbackType.BRIGHTNESS -> when {
+                            gestureFeedbackValue < 0.35f -> Icons.Filled.BrightnessLow
+                            gestureFeedbackValue < 0.70f -> Icons.Filled.BrightnessMedium
+                            else -> Icons.Filled.BrightnessHigh
+                        }
+                        GestureFeedbackType.VOLUME -> when {
+                            gestureFeedbackValue <= 0.01f -> Icons.AutoMirrored.Filled.VolumeOff
+                            gestureFeedbackValue < 0.50f -> Icons.AutoMirrored.Filled.VolumeDown
+                            else -> Icons.AutoMirrored.Filled.VolumeUp
+                        }
+                        else -> Icons.Default.PlayArrow
+                    }
+
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = capsuleContent,
+                        modifier = Modifier.size(24.dp)
+                    )
+
+                    // Track / Progress bar
+                    Box(
+                        modifier = Modifier
+                            .width(105.dp)
+                            .height(6.dp)
+                            .clip(CircleShape)
+                            .background(capsuleContent.copy(alpha = 0.22f))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(fraction = gestureFeedbackValue.coerceIn(0f, 1f))
+                                .clip(CircleShape)
+                                .background(primaryAccent)
+                        )
+                    }
+
+                    // Percentage Text
+                    Text(
+                        text = "${(gestureFeedbackValue * 100).toInt()}%",
+                        color = capsuleContent,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.width(36.dp)
                     )
                 }
             }

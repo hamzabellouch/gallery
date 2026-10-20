@@ -43,6 +43,7 @@ import coil3.request.crossfade
 import coil3.size.Precision
 import com.tkno.gallery.data.model.MediaItem
 import com.tkno.gallery.data.model.ResolutionBadge
+import com.tkno.gallery.theme.DarkCapsuleSurface
 import com.tkno.gallery.util.FormatUtils
 
 private val overlayGradient = Brush.verticalGradient(
@@ -70,7 +71,7 @@ fun MediaGridItem(
     columnCount: Int = 3,
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
-    showResolutionBadge: Boolean = true,
+    showResolutionBadge: Boolean = false,
     roundedCorners: Boolean = true,
     onLongClick: (() -> Unit)? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
@@ -247,7 +248,7 @@ fun MediaGridItem(
             if (item.isVideo) {
                 Surface(
                     shape = CircleShape,
-                    color = if (isDark) Color.Black.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                    color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
                     contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                     shadowElevation = if (isDark) 0.dp else 2.dp,
                     modifier = Modifier
@@ -281,7 +282,7 @@ fun MediaGridItem(
             // Minimal video icon capsule for month view
             Surface(
                 shape = CircleShape,
-                color = if (isDark) Color.Black.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
                 contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                 shadowElevation = if (isDark) 0.dp else 1.dp,
                 modifier = Modifier

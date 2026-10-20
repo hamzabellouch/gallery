@@ -28,7 +28,7 @@
     <string name="close">Close</string>
     <string name="to">End</string>
     <string name="translate">Translate</string>
-    <string name="translate_desc">Help translate this app on Hosted Weblate</string>
+    <string name="translate_desc">Help translate this app on GitHub repository</string>
     <string name="github_issue">GitHub issue</string>
     <string name="github_issue_desc">Submit an issue for bug report or feature request</string>
     <string name="info_copied">Info copied to clipboard</string>
@@ -112,6 +112,12 @@
     <string name="classic_viewer_bar_desc">Use the original full-width bottom bar in image and video viewer instead of the floating capsule</string>
     <string name="use_classic_taskbar">Classic taskbar</string>
     <string name="use_classic_taskbar_desc">Use the classic bottom navigation bar instead of the floating capsule dock</string>
+    <string name="navigation">Navigation</string>
+    <string name="hide_navigation_labels">Hide labels</string>
+    <string name="hide_navigation_labels_desc">Hide text labels below bottom navigation items</string>
+    <string name="animate_taskbar_indicator">Animate indicator</string>
+    <string name="animate_taskbar_indicator_desc">Animate the sliding capsule indicator when switching tabs</string>
+    <string name="media_viewer">Media viewer</string>
     <string name="show_resolution_badges">Show resolution badges</string>
     <string name="show_resolution_badges_desc">Display resolution icons (such as 4K and Full HD) on media cards</string>
     <string name="card_rounded_corners">Rounded corners</string>
@@ -122,4 +128,37 @@
     <string name="problem_report_dialog_desc">If you encounter any problem, please fill out this form (it will take approximately 20 seconds).</string>
     <string name="open_report_form">Report</string>
     <string name="star">Star</string>
+
+    <!-- Language Packs -->
+    <string name="download_languages">Download languages</string>
+    <string name="download_languages_desc">Download community translations</string>
+    <string name="downloaded_languages">Downloaded languages</string>
+    <string name="built_in_languages">Languages</string>
+    <string name="languages">Languages</string>
+    <string name="no_downloaded_languages">No downloaded languages yet</string>
+    <string name="download_failed">Failed to download language</string>
+    <string name="language_downloaded">Language downloaded successfully</string>
+    <string name="language_deleted">Language deleted</string>
+    <string name="available_community_languages">Available community languages</string>
+    <string name="install">Install</string>
+    <string name="installed">Installed</string>
+    <string name="retry">Retry</string>
+    <string name="no_internet_error">No internet connection</string>
+    <string name="delete">Delete</string>
+
+    <!-- Onboarding / Welcome Flow -->
+    <string name="gallery_brand" translatable="false">Gallery</string>
+    <string name="links_brand" translatable="false">Gallery</string>
+    <string name="welcome_to_gallery">Welcome to\nGallery</string>
+    <string name="welcome_to_links">Welcome to\nGallery</string>
+    <string name="welcome_desc">Enjoy fast, private photo and video browsing, album management, and media tools. Anytime, anywhere, across your devices.</string>
+    <string name="get_started">Get started</string>
+    <string name="onboarding_features_title">Fast &amp; fluid\nmedia viewer</string>
+    <string name="onboarding_features_desc">Experience ultra-smooth 120Hz browsing, 4K HDR playback, powerful editors, and seamless album organization.</string>
+    <string name="skip">Skip</string>
+    <string name="continue_button">Continue</string>
+    <string name="onboarding_level_up_title">Level up your\nexperience</string>
+    <string name="onboarding_level_up_desc">A pure gallery experience with zero ads, zero telemetry, and complete on-device privacy for all your memories.</string>
+    <string name="not_now">Not now</string>
+    <string name="lets_go">Let\'s go</string>
 </resources>

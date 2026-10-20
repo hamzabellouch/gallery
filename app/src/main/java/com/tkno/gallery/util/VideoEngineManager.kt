@@ -40,10 +40,8 @@ object VideoEngineManager {
                 // 1. Full-Spectrum Hardened Extractors Factory (MP4, MKV, WebM, TS, AVI, FLV, OGG)
                 extractorsFactory = DefaultExtractorsFactory().apply {
                     setConstantBitrateSeekingEnabled(false) // Do not assume CBR for high-bitrate VBR videos
-                    setMp4ExtractorFlags(
-                        Mp4Extractor.FLAG_WORKAROUND_IGNORE_EDIT_LISTS or
-                                Mp4Extractor.FLAG_READ_SEF_DATA
-                    )
+                    // Preserving Edit Lists is crucial for audio/video synchronization (e.g. LATM/AAC audio with H.264 60fps)
+                    setMp4ExtractorFlags(Mp4Extractor.FLAG_READ_SEF_DATA)
                     setMatroskaExtractorFlags(MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES)
                     setTsExtractorFlags(
                         DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
@@ -51,12 +49,12 @@ object VideoEngineManager {
                     )
                 }
 
-                // 2. Hardware Accelerated Renderers with Asynchronous MediaCodec Queueing & Decoder Fallback
+                // 2. Hardware Accelerated Renderers with Safe Queueing & Decoder Fallback
                 renderersFactory = DefaultRenderersFactory(appContext).apply {
                     setEnableDecoderFallback(true)
                     setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
                     setMediaCodecSelector(MediaCodecSelector.DEFAULT)
-                    forceEnableMediaCodecAsynchronousQueueing()
+                    // Let Media3 manage async queueing dynamically per device to avoid frame drops on high-FPS AVC
                     setAllowedVideoJoiningTimeMs(5000)
                 }
 
@@ -72,13 +70,12 @@ object VideoEngineManager {
         init(context)
         val appContext = context.applicationContext
 
-        // 3. Adaptive Dynamic LoadControl with uncapped target buffer bytes for high-bitrate 4K / 8K video
+        // 3. Adaptive Dynamic LoadControl tailored for low-latency, zero-stutter local storage playback
         val memoryProfile = MemoryManager.getMemoryProfile(appContext)
-        val (minBufferMs, maxBufferMs) = when (memoryProfile.maxAppMemoryLimitMb) {
-            200 -> Pair(10000, 25000)
-            500 -> Pair(15000, 35000)
-            800 -> Pair(20000, 50000)
-            else -> Pair(25000, 60000)
+        val (minBufferMs, maxBufferMs, bufferForPlaybackMs) = when (memoryProfile.maxAppMemoryLimitMb) {
+            200 -> Triple(2000, 4000, 400)
+            500 -> Triple(2500, 5000, 300)
+            else -> Triple(3000, 6000, 250)
         }
 
         val loadControl = DefaultLoadControl.Builder()
@@ -86,12 +83,12 @@ object VideoEngineManager {
             .setBufferDurationsMs(
                 /* minBufferMs = */ minBufferMs,
                 /* maxBufferMs = */ maxBufferMs,
-                /* bufferForPlaybackMs = */ 1500, // Rock-solid start buffer so high bitrate 4K/8K has ample frames ready
-                /* bufferForPlaybackAfterRebufferMs = */ 2500
+                /* bufferForPlaybackMs = */ bufferForPlaybackMs, // Near-instantaneous startup from flash storage
+                /* bufferForPlaybackAfterRebufferMs = */ 500
             )
-            .setTargetBufferBytes(C.LENGTH_UNSET) // Dynamic capacity based on actual bitrate, avoiding 13MB ceiling for high-bitrate video
+            .setTargetBufferBytes(C.LENGTH_UNSET) // Dynamic capacity avoiding artificial ceilings on 4K/8K 120fps
             .setPrioritizeTimeOverSizeThresholds(true)
-            .setBackBuffer(10000, true)
+            .setBackBuffer(2000, false) // 2s back buffer without retaining full GOP keyframe clusters to prevent GC spikes
             .build()
 
         // 4. MediaSourceFactory equipped with hardened extractors
@@ -125,6 +122,9 @@ object VideoEngineManager {
             .setAudioAttributes(audioAttributes, true)
             .setSeekParameters(SeekParameters.CLOSEST_SYNC)
             .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT)
+            .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS)
+            .setWakeMode(C.WAKE_MODE_LOCAL)
+            .setHandleAudioBecomingNoisy(true)
             .build()
     }
 }

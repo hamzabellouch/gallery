@@ -13,6 +13,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import com.tkno.gallery.theme.DarkCapsuleSurface
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -30,6 +32,7 @@ fun ClassicBottomBar(
     currentTab: Tab,
     onTabSelect: (Tab) -> Unit,
     modifier: Modifier = Modifier,
+    hideLabels: Boolean = false,
     onOrderChanged: (List<Tab>) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
@@ -43,7 +46,8 @@ fun ClassicBottomBar(
     val activeColor = MaterialTheme.colorScheme.primary
     val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
     val indicatorCapsuleColor = MaterialTheme.colorScheme.secondaryContainer
-    val navContainerColor = MaterialTheme.colorScheme.background
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val navContainerColor = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.background
 
     NavigationBar(
         containerColor = navContainerColor,
@@ -66,6 +70,7 @@ fun ClassicBottomBar(
             NavigationBarItem(
                 selected = isSelected,
                 onClick = { onTabSelect(tab) },
+                alwaysShowLabel = !hideLabels,
                 icon = {
                     Icon(
                         imageVector = info.icon,
@@ -73,13 +78,15 @@ fun ClassicBottomBar(
                         tint = if (isSelected) activeColor else inactiveColor
                     )
                 },
-                label = {
-                    Text(
-                        text = info.label,
-                        color = if (isSelected) activeColor else inactiveColor,
-                        fontSize = 12.sp
-                    )
-                },
+                label = if (!hideLabels) {
+                    {
+                        Text(
+                            text = info.label,
+                            color = if (isSelected) activeColor else inactiveColor,
+                            fontSize = 12.sp
+                        )
+                    }
+                } else null,
                 colors = NavigationBarItemDefaults.colors(
                     indicatorColor = indicatorCapsuleColor
                 ),

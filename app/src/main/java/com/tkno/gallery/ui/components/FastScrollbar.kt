@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tkno.gallery.data.model.MediaItem
+import com.tkno.gallery.theme.DarkCapsuleSurface
 import com.tkno.gallery.theme.TaskbarActivePrimaryDark
 import com.tkno.gallery.theme.TaskbarActivePrimaryLight
 import com.tkno.gallery.ui.screens.home.GalleryGridLevel
@@ -289,7 +290,7 @@ fun FastScrollbar(
                     exit = fadeOut() + scaleOut(targetScale = 0.85f)
                 ) {
                     Surface(
-                        color = if (isDark) Color(0xFF2C2F36) else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                         shape = RoundedCornerShape(20.dp),
                         shadowElevation = 6.dp,
@@ -310,16 +311,14 @@ fun FastScrollbar(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .size(handleSizeDp)
-                        .shadow(elevation = if (isDragging) 8.dp else 4.dp, shape = CircleShape)
+                        .shadow(elevation = 6.dp, shape = CircleShape)
                         .clip(CircleShape)
-                        .background(
-                            if (isDragging) primaryColor else if (isDark) Color(0xFF434750) else MaterialTheme.colorScheme.surfaceContainerHigh
-                        )
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 ) {
                     Icon(
                         imageVector = Icons.Default.UnfoldMore,
                         contentDescription = "Timeline Fast Scroll",
-                        tint = if (isDragging) (if (isDark) Color.White else MaterialTheme.colorScheme.onPrimary) else if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
+                        tint = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(20.dp)
                     )
                 }

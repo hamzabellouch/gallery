@@ -35,7 +35,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -62,6 +64,7 @@ import com.tkno.gallery.ui.components.FastScrollbar
 import com.tkno.gallery.ui.components.FloatingBottomBar
 import com.tkno.gallery.ui.components.MediaGridItem
 import androidx.compose.foundation.isSystemInDarkTheme
+import com.tkno.gallery.theme.DarkCapsuleSurface
 import com.tkno.gallery.theme.TaskbarActivePrimaryDark
 import com.tkno.gallery.theme.TaskbarActivePrimaryLight
 import com.tkno.gallery.theme.TaskbarInactiveVariantDark
@@ -205,25 +208,47 @@ fun HomeScreen(
         mutableStateOf(prefs.getBoolean("use_classic_taskbar", false))
     }
 
+    var hideNavigationLabels by remember {
+        mutableStateOf(prefs.getBoolean("hide_navigation_labels", false))
+    }
+
+    var animateTaskbarIndicator by remember {
+        mutableStateOf(prefs.getBoolean("animate_taskbar_indicator", true))
+    }
+
     var showResolutionBadges by remember {
         mutableStateOf(prefs.getBoolean("show_resolution_badges", false))
+    }
+
+    var cardRoundedCorners by remember {
+        mutableStateOf(prefs.getBoolean("card_rounded_corners", true))
     }
 
     var isShortsModeActive by rememberSaveable {
         mutableStateOf(prefs.getBoolean("video_shorts_mode", false))
     }
 
-    DisposableEffect(prefs) {
-        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-            if (key == "use_classic_taskbar") {
-                useClassicTaskbar = p.getBoolean("use_classic_taskbar", false)
-            } else if (key == "show_resolution_badges") {
-                showResolutionBadges = p.getBoolean("show_resolution_badges", false)
+    val preferenceListener = remember {
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            when (key) {
+                "use_classic_taskbar" -> useClassicTaskbar = p.getBoolean("use_classic_taskbar", false)
+                "hide_navigation_labels" -> hideNavigationLabels = p.getBoolean("hide_navigation_labels", false)
+                "animate_taskbar_indicator" -> animateTaskbarIndicator = p.getBoolean("animate_taskbar_indicator", true)
+                "show_resolution_badges" -> showResolutionBadges = p.getBoolean("show_resolution_badges", false)
+                "card_rounded_corners" -> cardRoundedCorners = p.getBoolean("card_rounded_corners", true)
             }
         }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    DisposableEffect(prefs) {
+        useClassicTaskbar = prefs.getBoolean("use_classic_taskbar", false)
+        hideNavigationLabels = prefs.getBoolean("hide_navigation_labels", false)
+        animateTaskbarIndicator = prefs.getBoolean("animate_taskbar_indicator", true)
+        showResolutionBadges = prefs.getBoolean("show_resolution_badges", false)
+        cardRoundedCorners = prefs.getBoolean("card_rounded_corners", true)
+        prefs.registerOnSharedPreferenceChangeListener(preferenceListener)
         onDispose {
-            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+            prefs.unregisterOnSharedPreferenceChangeListener(preferenceListener)
         }
     }
 
@@ -461,6 +486,8 @@ fun HomeScreen(
                     state = galleryGridState,
                     onItemClick = onItemClick,
                     accentColor = activeColor,
+                    showResolutionBadges = showResolutionBadges,
+                    cardRoundedCorners = cardRoundedCorners,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope
                 )
@@ -469,6 +496,7 @@ fun HomeScreen(
                 ConsoleContent(
                     albums = albums,
                     state = albumsGridState,
+                    cardRoundedCorners = cardRoundedCorners,
                     onAlbumClick = onAlbumClick
                 )
             }
@@ -491,6 +519,8 @@ fun HomeScreen(
                         }
                     },
                     accentColor = activeColor,
+                    showResolutionBadges = showResolutionBadges,
+                    cardRoundedCorners = cardRoundedCorners,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope
                 )
@@ -508,6 +538,8 @@ fun HomeScreen(
                     state = imagesGridState,
                     onItemClick = onItemClick,
                     accentColor = activeColor,
+                    showResolutionBadges = showResolutionBadges,
+                    cardRoundedCorners = cardRoundedCorners,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope
                 )
@@ -516,6 +548,8 @@ fun HomeScreen(
 
         // 2. Floating Top Bar Capsules (Left & Right) with NO solid bar background
         val selectedCount = selectedItemIds.size
+        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val topCapsuleBgColor = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f) else MaterialTheme.colorScheme.background.copy(alpha = 0.94f)
         Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -527,7 +561,7 @@ fun HomeScreen(
         ) {
             // Left Capsule: [ Menu Button + Title ("Gallery", "Albums", "Videos", "Images") ]
             Surface(
-                color = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+                color = topCapsuleBgColor,
                 shape = RoundedCornerShape(percent = 50),
                 tonalElevation = 0.dp,
                 shadowElevation = 6.dp,
@@ -589,7 +623,7 @@ fun HomeScreen(
             // Right Capsule: [ Heart Icon + 3-dots Menu Icon ] (Hidden on Albums tab)
             if (currentTab != Tab.Console) {
                 Surface(
-                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+                    color = topCapsuleBgColor,
                     shape = RoundedCornerShape(percent = 50),
                     tonalElevation = 0.dp,
                     shadowElevation = 6.dp,
@@ -830,6 +864,7 @@ fun HomeScreen(
                     tabs = reorderableTabs,
                     currentTab = currentTab,
                     onTabSelect = { currentTab = it },
+                    hideLabels = hideNavigationLabels,
                     onOrderChanged = { newOrder ->
                         saveNavOrder(newOrder)
                     }
@@ -839,6 +874,8 @@ fun HomeScreen(
                     tabs = reorderableTabs,
                     currentTab = currentTab,
                     onTabSelect = { currentTab = it },
+                    hideLabels = hideNavigationLabels,
+                    animateIndicator = animateTaskbarIndicator,
                     onOrderChanged = { newOrder ->
                         saveNavOrder(newOrder)
                     }
@@ -862,32 +899,11 @@ private fun MediaGridContent(
     state: LazyGridState = rememberLazyGridState(),
     onItemClick: (MediaItem, List<MediaItem>) -> Unit,
     accentColor: Color = MaterialTheme.colorScheme.primary,
+    showResolutionBadges: Boolean = false,
+    cardRoundedCorners: Boolean = true,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
-    val context = LocalContext.current
-    val prefs = remember(context) { context.getSharedPreferences("gallery_prefs", Context.MODE_PRIVATE) }
-    var showResolutionBadges by remember {
-        mutableStateOf(prefs.getBoolean("show_resolution_badges", false))
-    }
-    var cardRoundedCorners by remember {
-        mutableStateOf(prefs.getBoolean("card_rounded_corners", false))
-    }
-
-    DisposableEffect(prefs) {
-        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-            if (key == "show_resolution_badges") {
-                showResolutionBadges = p.getBoolean("show_resolution_badges", false)
-            } else if (key == "card_rounded_corners") {
-                cardRoundedCorners = p.getBoolean("card_rounded_corners", false)
-            }
-        }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
-        onDispose {
-            prefs.unregisterOnSharedPreferenceChangeListener(listener)
-        }
-    }
-
     val fullFlattenedList = remember(groupedMedia) {
         groupedMedia.values.flatten()
     }
@@ -1043,10 +1059,15 @@ private fun MediaGridContent(
 private fun ConsoleContent(
     albums: List<Album>,
     state: LazyGridState = rememberLazyGridState(),
+    cardRoundedCorners: Boolean = true,
     onAlbumClick: (Album) -> Unit
 ) {
     val context = LocalContext.current
     val iconColor = MaterialTheme.colorScheme.primary
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+    val albumShape = if (cardRoundedCorners) RoundedCornerShape(16.dp) else RectangleShape
+    val albumCoverShape = if (cardRoundedCorners) RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp) else RectangleShape
 
     if (albums.isEmpty()) {
         Box(
@@ -1079,13 +1100,13 @@ private fun ConsoleContent(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(albumShape)
                         .clickable {
                             onAlbumClick(album)
                         },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = albumShape,
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        containerColor = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceVariant
                     )
                 ) {
                     Column {
@@ -1093,7 +1114,7 @@ private fun ConsoleContent(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(140.dp)
-                                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                                .clip(albumCoverShape)
                         ) {
                             if (album.coverUri != null) {
                                 AsyncImage(

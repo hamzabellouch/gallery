@@ -55,6 +55,7 @@ import com.tkno.gallery.ui.components.CustomIcons
 import com.tkno.gallery.ui.screens.player.VideoPlayerScreen
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import com.tkno.gallery.theme.DarkCapsuleSurface
 import com.tkno.gallery.theme.TaskbarActivePrimaryDark
 import com.tkno.gallery.util.ExifData
 import com.tkno.gallery.util.ExifUtils
@@ -91,6 +92,9 @@ fun MediaPagerScreen(
     animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val capsuleBg = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f) else MaterialTheme.colorScheme.background.copy(alpha = 0.88f)
+    val capsuleContent = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+    val capsuleElevation = if (isDark) 0.dp else 4.dp
 
     if (mediaItems.isEmpty()) {
         Box(
@@ -348,6 +352,7 @@ fun MediaPagerScreen(
                 } else {
                     TilingImageView(
                         imageUri = item.uri,
+                        mimeType = item.mimeType,
                         modifier = Modifier.fillMaxSize(),
                         resetZoomTrigger = resetZoomTrigger,
                         onTap = { showBars = !showBars },
@@ -379,16 +384,12 @@ fun MediaPagerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val topCapsuleBg = if (isDark) Color.Black.copy(alpha = 0.5f) else MaterialTheme.colorScheme.background.copy(alpha = 0.88f)
-                    val topCapsuleContent = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
-                    val topCapsuleElevation = if (isDark) 0.dp else 4.dp
-
                     // Back Button in a Circle
                     Surface(
                         shape = CircleShape,
-                        color = topCapsuleBg,
-                        contentColor = topCapsuleContent,
-                        shadowElevation = topCapsuleElevation,
+                        color = capsuleBg,
+                        contentColor = capsuleContent,
+                        shadowElevation = capsuleElevation,
                         modifier = Modifier.size(44.dp)
                     ) {
                         IconButton(
@@ -398,7 +399,7 @@ fun MediaPagerScreen(
                             Icon(
                                 imageVector = CustomIcons.ChevronLeft,
                                 contentDescription = "Back",
-                                tint = topCapsuleContent,
+                                tint = capsuleContent,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -407,9 +408,9 @@ fun MediaPagerScreen(
                     // Capsule containing FitScreen (when zoomed), Rotate, and Three Dots (More)
                     Surface(
                         shape = CircleShape,
-                        color = topCapsuleBg,
-                        contentColor = topCapsuleContent,
-                        shadowElevation = topCapsuleElevation,
+                        color = capsuleBg,
+                        contentColor = capsuleContent,
+                        shadowElevation = capsuleElevation,
                         modifier = Modifier
                             .height(44.dp)
                             .animateContentSize(spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow))
@@ -435,7 +436,7 @@ fun MediaPagerScreen(
                                     Icon(
                                         imageVector = CustomIcons.FitScreen,
                                         contentDescription = "Fit to Screen",
-                                        tint = topCapsuleContent,
+                                        tint = capsuleContent,
                                         modifier = Modifier.size(22.dp)
                                     )
                                 }
@@ -456,7 +457,7 @@ fun MediaPagerScreen(
                                     Icon(
                                         imageVector = CustomIcons.ScreenshotFrame2,
                                         contentDescription = "Capture Frame",
-                                        tint = topCapsuleContent,
+                                        tint = capsuleContent,
                                         modifier = Modifier.size(22.dp)
                                     )
                                 }
@@ -477,7 +478,7 @@ fun MediaPagerScreen(
                                 Icon(
                                     imageVector = CustomIcons.MobileRotate,
                                     contentDescription = "Rotate Screen",
-                                    tint = if (isLandscape) MaterialTheme.colorScheme.primary else topCapsuleContent,
+                                    tint = if (isLandscape) MaterialTheme.colorScheme.primary else capsuleContent,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
@@ -492,7 +493,7 @@ fun MediaPagerScreen(
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
                                     contentDescription = "More Options",
-                                    tint = topCapsuleContent,
+                                    tint = capsuleContent,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
@@ -517,13 +518,13 @@ fun MediaPagerScreen(
                     .fillMaxWidth()
             }
         ) {
-            val barBgColor = if (isDark) {
-                if (useClassicViewerBar) Color.Black.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.65f)
+            val barBgColor = if (useClassicViewerBar) {
+                if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f) else MaterialTheme.colorScheme.background.copy(alpha = 0.94f)
             } else {
-                MaterialTheme.colorScheme.background.copy(alpha = if (useClassicViewerBar) 0.94f else 0.88f)
+                capsuleBg
             }
-            val barContentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
-            val barElevation = if (isDark) 0.dp else 6.dp
+            val barContentColor = capsuleContent
+            val barElevation = capsuleElevation
 
             Surface(
                 color = barBgColor,

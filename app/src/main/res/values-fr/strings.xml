@@ -30,7 +30,7 @@
     <string name="close">Fermer</string>
     <string name="to">Fin</string>
     <string name="translate">Traduire</string>
-    <string name="translate_desc">Aidez à traduire cette application sur Hosted Weblate</string>
+    <string name="translate_desc">Aidez à traduire cette application sur le dépôt GitHub</string>
     <string name="github_issue">Problème GitHub</string>
     <string name="github_issue_desc">Soumettre un problème pour un rapport de bogue ou une demande de fonctionnalité</string>
     <string name="info_copied">Informations copiées dans le presse-papiers</string>
@@ -240,4 +240,48 @@ le nettoyage du cache</string>
     <string name="onboarding_page2_desc">Recevez une notification lorsque le cache devient trop volumineux.</string>
     <string name="onboarding_page3_title">C\'est tout !</string>
     <string name="onboarding_page3_desc">Tout est configuré avec succès et l\'application est prête.</string>
+
+    <!-- Language Packs -->
+    <string name="download_languages">Télécharger des langues</string>
+    <string name="download_languages_desc">Télécharger les traductions de la communauté</string>
+    <string name="downloaded_languages">Langues téléchargées</string>
+    <string name="built_in_languages">Langues</string>
+    <string name="languages">Langues</string>
+    <string name="no_downloaded_languages">Aucune langue téléchargée pour le moment</string>
+    <string name="download_failed">Échec du téléchargement de la langue</string>
+    <string name="language_downloaded">Langue téléchargée avec succès</string>
+    <string name="language_deleted">Langue supprimée</string>
+    <string name="available_community_languages">Langues communautaires disponibles</string>
+    <string name="install">Installer</string>
+    <string name="installed">Installé</string>
+    <string name="retry">Réessayer</string>
+    <string name="no_internet_error">Aucune connexion Internet</string>
+    <string name="delete">Supprimer</string>
+
+    <string name="classic_viewer_bar">Barre multimédia classique</string>
+    <string name="classic_viewer_bar_desc">Utiliser la barre inférieure d\'origine en plein écran dans la visionneuse au lieu de la capsule flottante</string>
+    <string name="use_classic_taskbar">Barre des tâches classique</string>
+    <string name="use_classic_taskbar_desc">Utiliser la barre de navigation inférieure classique au lieu de la capsule flottante</string>
+    <string name="navigation">Navigation</string>
+    <string name="hide_navigation_labels">Masquer les libellés</string>
+    <string name="hide_navigation_labels_desc">Masquer les textes sous les éléments de la barre de navigation</string>
+    <string name="animate_taskbar_indicator">Animer l\'indicateur</string>
+    <string name="animate_taskbar_indicator_desc">Animer la capsule coulissante lors du changement d\'onglet</string>
+    <string name="media_viewer">Visionneuse multimédia</string>
+
+    <!-- Onboarding / Welcome Flow -->
+    <string name="gallery_brand" translatable="false">Gallery</string>
+    <string name="links_brand" translatable="false">Gallery</string>
+    <string name="welcome_to_gallery">Bienvenue sur\nGallery</string>
+    <string name="welcome_to_links">Bienvenue sur\nGallery</string>
+    <string name="welcome_desc">Profitez d\'une navigation rapide et privée de vos photos et vidéos, de la gestion d\'albums et d\'outils multimédias.</string>
+    <string name="get_started">Commencer</string>
+    <string name="onboarding_features_title">Visualiseur multimédia\nrapide et fluide</string>
+    <string name="onboarding_features_desc">Profitez d\'une navigation ultra-fluide à 120 Hz, d\'une lecture 4K HDR, d\'éditeurs puissants et d\'une organisation parfaite.</string>
+    <string name="skip">Passer</string>
+    <string name="continue_button">Continuer</string>
+    <string name="onboarding_level_up_title">Améliorez votre\nexpérience</string>
+    <string name="onboarding_level_up_desc">Une expérience de galerie pure sans publicités, sans télémétrie et avec une confidentialité totale sur l\'appareil.</string>
+    <string name="not_now">Pas maintenant</string>
+    <string name="lets_go">C\'est parti</string>
 </resources>

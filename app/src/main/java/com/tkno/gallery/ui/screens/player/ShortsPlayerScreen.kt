@@ -49,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import com.tkno.gallery.theme.DarkCapsuleSurface
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -305,7 +306,7 @@ fun ShortsPlayerScreen(
         if (!isInPipMode) {
             Surface(
                 shape = CircleShape,
-                color = if (isDark) Color.Black.copy(alpha = 0.45f) else MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+                color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.45f) else MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
                 contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
                 tonalElevation = 0.dp,
                 shadowElevation = if (isDark) 0.dp else 6.dp,
@@ -529,6 +530,11 @@ private fun ShortsVideoPageItem(
                         }
                     }
                 },
+                update = { playerView ->
+                    if (playerView.player != exoPlayer) {
+                        playerView.player = exoPlayer
+                    }
+                },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -559,7 +565,7 @@ private fun ShortsVideoPageItem(
         ) {
             Surface(
                 shape = CircleShape,
-                color = if (isDark) Color.Black.copy(alpha = 0.5f) else MaterialTheme.colorScheme.background.copy(alpha = 0.75f),
+                color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f) else MaterialTheme.colorScheme.background.copy(alpha = 0.75f),
                 shadowElevation = if (isDark) 0.dp else 4.dp,
                 modifier = Modifier.size(72.dp)
             ) {
@@ -739,7 +745,7 @@ private fun ShortsVideoPageItem(
                     contentAlignment = Alignment.BottomCenter
                 ) {
                     Surface(
-                        color = if (isDark) Color.Black.copy(alpha = 0.5f) else MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
+                        color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f) else MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
                         shape = RoundedCornerShape(28.dp),
                         shadowElevation = 8.dp,
                         tonalElevation = 0.dp,
@@ -917,7 +923,7 @@ private fun TikTokActionButton(
     ) {
         Surface(
             shape = CircleShape,
-            color = if (isDark) Color.Black.copy(alpha = 0.45f) else MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
+            color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.45f) else MaterialTheme.colorScheme.background.copy(alpha = 0.88f),
             contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
             shadowElevation = if (isDark) 0.dp else 4.dp,
             modifier = Modifier.size(44.dp)

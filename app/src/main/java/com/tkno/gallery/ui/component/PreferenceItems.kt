@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -232,6 +233,7 @@ fun PreferenceSwitch(
     enabled: Boolean = true,
     isChecked: Boolean = true,
     thumbContent: (@Composable () -> Unit)? = rememberThumbContent(isChecked = isChecked),
+    onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit) = {},
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -241,7 +243,14 @@ fun PreferenceSwitch(
             Modifier.fillMaxWidth().toggleable(
                 value = isChecked,
                 enabled = enabled,
-                onValueChange = { onClick() },
+                role = Role.Switch,
+                onValueChange = { checked ->
+                    if (onCheckedChange != null) {
+                        onCheckedChange(checked)
+                    } else {
+                        onClick()
+                    }
+                },
                 interactionSource = interactionSource,
                 indication = androidx.compose.foundation.LocalIndication.current,
             )
